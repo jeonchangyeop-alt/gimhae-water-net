@@ -27,6 +27,15 @@
 </head>
 <body>
 
+<!-- 카카오톡 인앱 브라우저 감지 시 안내 배너 -->
+<div id="kakaoNoticeBanner" style="display:none; position:fixed; top:0; left:0; right:0; z-index:999999; background:linear-gradient(90deg, #FEE500, #FACC15); color:#1F2937; padding:9px 12px; font-size:12px; font-weight:600; box-shadow:0 3px 10px rgba(0,0,0,0.2); align-items:center; justify-content:space-between; line-height:1.4;">
+    <div style="display:flex; align-items:center; gap:8px;">
+        <i class="fa-solid fa-comment" style="color:#3C1E1E; font-size:15px;"></i>
+        <span><b>카카오톡으로 접속 중</b>: 우측 하단 <b>[⋮]</b> ➔ <b>[다른 브라우저로 열기]</b>를 누르시면 <b>홈 화면 추가(앱 설치)</b> 및 빠른 지도 조작이 가능합니다!</span>
+    </div>
+    <button onclick="document.getElementById('kakaoNoticeBanner').style.display='none'" style="background:none; border:none; font-size:16px; font-weight:bold; cursor:pointer; color:#374151; padding:2px 8px; margin-left:8px;">✕</button>
+</div>
+
 <div id="app-layout">
     <!-- 1. 최상단 네비게이션 헤더 (GNB) -->
     <header class="top-navbar">
@@ -2831,14 +2840,14 @@
 
 <!-- 비즈니스 모듈 스크립트 -->
 <script src="js/topologyData.js?v=20261112f"></script>
-<script src="js/topologyCanvas.js?v=20261112f"></script>
+<script src="js/topologyCanvas.js?v=20261117C"></script>
 <script src="js/sampleData.js?v=20261112f"></script>
 <script src="js/cloudSync.js?v=20261117B"></script>
 <script src="js/imageCompressor.js?v=20261112f"></script>
 <script src="js/offlineStore.js?v=20261112f"></script>
 <!-- 김해시 실제 관망 GIS 공간데이터셋 (WGS84 변환) -->
 <script src="data/gimhae_gis_dataset.js?v=20261117B"></script>
-<script src="js/map.js?v=20261117B"></script>
+<script src="js/map.js?v=20261117C"></script>
 <!-- 수용가 부과량 데이터 (file:// 환경 CORS 차단 방지 및 고속 로드) -->
 <script defer src="data/consumer_charge_data.js"></script>
 <!-- 1. 유량 및 유수율 관리(수정작업) 100% 검증 기준 데이터셋 -->
@@ -2848,7 +2857,19 @@
 <script src="js/targetManager.js?v=20261113Q"></script>
 <!-- 9. 기준 및 근거 AI 어시스턴트 (노트북LM Grounded Engine) -->
 <script src="js/standardsLm.js?v=20261113Q"></script>
-<script src="js/app.js?v=20261117B"></script>
+<script src="js/app.js?v=20261117C"></script>
+
+<script>
+    // 카카오톡 인앱 브라우저 감지 시 안내 및 크롬 전환
+    if (/KAKAOTALK/i.test(navigator.userAgent)) {
+        const banner = document.getElementById('kakaoNoticeBanner');
+        if (banner) banner.style.display = 'flex';
+        if (/Android/i.test(navigator.userAgent)) {
+            // 안드로이드 카카오톡 외부 브라우저(크롬) 인텐트 자동 실행
+            location.href = 'kakaotalk://web/openExternal?url=' + encodeURIComponent(location.href);
+        }
+    }
+</script>
 
 </body>
 </html>

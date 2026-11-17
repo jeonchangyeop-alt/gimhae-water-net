@@ -67,18 +67,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         console.warn('[App] 초기 목록 채우기 경고:', e);
     }
 
-    // 5. URL 쿼리 파라미터에 따른 뷰 진입 (기본: [1. 계통도])
+    // 5. URL 쿼리 파라미터에 따른 뷰 진입 (기본: 관망 GIS 지도 [MAP])
     try {
         const urlParams = new URLSearchParams(window.location.search);
         const reqView = urlParams.get('view');
         if (!reqView) {
-            switchMainView('TOPOLOGY');
+            switchMainView('MAP'); // 현장 관망 관리를 위해 GIS 지도로 기본 진입!
         } else {
             switchMainView(reqView);
         }
     } catch (e) {
         console.error('[App] 메인 뷰 진입 오류:', e);
-        switchMainView('TOPOLOGY');
+        switchMainView('MAP');
     }
 
     // 6. 사용자 저장 테마(라이트 / 다크 네이비) 복원

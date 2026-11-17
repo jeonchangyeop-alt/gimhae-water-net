@@ -428,6 +428,68 @@ class TopologyCanvasManager {
             viewport.style.cursor = 'default';
         });
 
+        // 6-1. 모바일 터치 팬(Pan) 및 핀치 줌(Pinch-to-zoom) 지원
+        let lastTouchDist = null;
+        let lastTouchCenter = null;
+
+        viewport.addEventListener('touchstart', (e) => {
+            if (e.target.closest('.topo-node-item')) return;
+            if (e.touches.length === 1) {
+                this.isPanning = true;
+                this.startPan = { x: e.touches[0].clientX - this.panX, y: e.touches[0].clientY - this.panY };
+            } else if (e.touches.length === 2) {
+                this.isPanning = false;
+                const t1 = e.touches[0];
+                const t2 = e.touches[1];
+                lastTouchDist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+                lastTouchCenter = {
+                    x: (t1.clientX + t2.clientX) / 2,
+                    y: (t1.clientY + t2.clientY) / 2
+                };
+            }
+        }, { passive: false });
+
+        window.addEventListener('touchmove', (e) => {
+            if (this.isPanning && e.touches.length === 1) {
+                e.preventDefault();
+                this.panX = e.touches[0].clientX - this.startPan.x;
+                this.panY = e.touches[0].clientY - this.startPan.y;
+                this.updateTransform();
+            } else if (e.touches.length === 2 && lastTouchDist) {
+                e.preventDefault();
+                const t1 = e.touches[0];
+                const t2 = e.touches[1];
+                const newDist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+                const zoomFactor = newDist / lastTouchDist;
+                
+                const rect = viewport.getBoundingClientRect();
+                const centerX = (lastTouchCenter ? lastTouchCenter.x : (t1.clientX + t2.clientX) / 2) - rect.left;
+                const centerY = (lastTouchCenter ? lastTouchCenter.y : (t1.clientY + t2.clientY) / 2) - rect.top;
+
+                const newScale = Math.min(Math.max(0.2, this.scale * zoomFactor), 3.0);
+                const scaleRatio = newScale / this.scale;
+                this.panX = centerX - (centerX - this.panX) * scaleRatio;
+                this.panY = centerY - (centerY - this.panY) * scaleRatio;
+                this.scale = newScale;
+
+                lastTouchDist = newDist;
+                this.updateTransform();
+            }
+        }, { passive: false });
+
+        window.addEventListener('touchend', (e) => {
+            if (e.touches.length === 0) {
+                this.isPanning = false;
+                lastTouchDist = null;
+                lastTouchCenter = null;
+            } else if (e.touches.length === 1) {
+                this.isPanning = true;
+                this.startPan = { x: e.touches[0].clientX - this.panX, y: e.touches[0].clientY - this.panY };
+                lastTouchDist = null;
+                lastTouchCenter = null;
+            }
+        });
+
         // 7. 마우스 휠 조작 분리:
         //    - [Ctrl + 휠]: 축척 확대 / 축소 (Zoom towards pointer)
         //    - [그냥 휠]: 위 / 아래 화면 스크롤 (Vertical Pan)
