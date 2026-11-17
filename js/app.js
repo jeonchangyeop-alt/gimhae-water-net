@@ -5143,6 +5143,23 @@ function initVWorldMapControls() {
         });
     }
 
+    // [모바일 지도 도구함 접기/펼치기 토글]
+    const btnMapToolbarToggle = document.getElementById('btnMapToolbarToggle');
+    const mapToolbarGroup = document.getElementById('mapToolbarGroup');
+    if (btnMapToolbarToggle && mapToolbarGroup) {
+        btnMapToolbarToggle.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const isOpen = mapToolbarGroup.classList.toggle('open');
+            btnMapToolbarToggle.classList.toggle('active', isOpen);
+        });
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('#mapTopRightControls')) {
+                mapToolbarGroup.classList.remove('open');
+                btnMapToolbarToggle.classList.remove('active');
+            }
+        });
+    }
+
     // [현장 수정사항 반영 최신 GIS (GeoJSON/QGIS) 내보내기]
     const btnExportGisGeoJson = document.getElementById('btnExportGisGeoJson');
     const btnGlcExportGeoJson = document.getElementById('btnGlcExportGeoJson');

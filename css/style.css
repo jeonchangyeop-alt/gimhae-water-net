@@ -9568,23 +9568,55 @@ body.theme-navy .glo-bar-track {
 }
 
 .gis-layer-control-panel.collapsed {
-    width: 44px;
-    overflow: hidden;
+    width: 38px !important;
+    height: 38px !important;
+    min-width: 38px !important;
+    min-height: 38px !important;
+    max-height: 38px !important;
+    overflow: hidden !important;
+    border-radius: 10px !important;
+    padding: 0 !important;
+    cursor: pointer !important;
+    background: #FFFFFF !important;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.15), 0 1px 3px rgba(0, 0, 0, 0.08) !important;
+    border: 1px solid #CBD5E1 !important;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
 }
 
-.gis-layer-control-panel.collapsed .glc-body,
-.gis-layer-control-panel.collapsed .glc-title,
-.gis-layer-control-panel.collapsed .glc-toggle-all-btn {
-    display: none !important;
+.gis-layer-control-panel.collapsed:hover {
+    background: #EFF6FF !important;
+    border-color: #3B82F6 !important;
+    transform: scale(1.05);
 }
 
 .gis-layer-control-panel.collapsed .glc-header {
-    padding: 10px 8px;
-    justify-content: center;
+    width: 100% !important;
+    height: 100% !important;
+    padding: 0 !important;
+    border: none !important;
+    background: transparent !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    border-radius: 10px !important;
 }
 
-.gis-layer-control-panel.collapsed .glc-collapse-btn i {
-    transform: rotate(180deg);
+.gis-layer-control-panel.collapsed .glc-title-group {
+    margin: 0 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+}
+
+.gis-layer-control-panel.collapsed .glc-title-group i {
+    font-size: 17px !important;
+    color: #2563EB !important;
+}
+
+.gis-layer-control-panel.collapsed .glc-title,
+.gis-layer-control-panel.collapsed .glc-header-btns,
+.gis-layer-control-panel.collapsed .glc-body {
+    display: none !important;
 }
 
 .glc-header {
@@ -9969,6 +10001,133 @@ body.theme-navy .glc-size-slider {
 
 body.theme-navy .glc-size-num {
     color: #60A5FA;
+}
+
+/* ========================================================================= */
+/* 지도 우측 상단 툴바 그룹 및 모바일 반응형 접기/펼치기                    */
+/* ========================================================================= */
+.map-toolbar-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.btn-toolbar-toggle {
+    display: none; /* 데스크톱 기본 숨김 */
+}
+
+@media (max-width: 768px) {
+    /* 1. 좌측 GIS 레이어 패널 모바일 컴팩트 스타일 */
+    .gis-layer-control-panel {
+        top: 10px;
+        left: 10px;
+        width: min(290px, calc(100vw - 20px));
+        max-height: calc(100vh - 120px);
+        box-shadow: 0 8px 24px rgba(15, 23, 42, 0.25);
+    }
+
+    .gis-layer-control-panel .glc-header {
+        padding: 8px 10px;
+    }
+
+    .gis-layer-control-panel .glc-title {
+        font-size: 12px;
+        white-space: nowrap;
+    }
+
+    .glc-toggle-all-btn {
+        font-size: 10px;
+        padding: 2px 6px;
+    }
+
+    .glc-collapse-btn {
+        padding: 4px 8px;
+        font-size: 13px;
+        background: #F1F5F9;
+        border-radius: 6px;
+        color: #475569;
+        font-weight: 700;
+    }
+
+    .glc-body {
+        padding: 5px 8px 8px 8px;
+        gap: 2px;
+    }
+
+    .glc-section-heading {
+        font-size: 10.5px;
+        padding: 3px 6px;
+    }
+
+    .glc-layer-row {
+        padding: 3px 4px;
+    }
+
+    .glc-name {
+        font-size: 12px;
+    }
+
+    .glc-count-badge {
+        font-size: 9.5px;
+        padding: 1px 4px;
+    }
+
+    /* 2. 우측 상단 지도 컨트롤러 툴바 컴팩트화 */
+    .map-top-right-controls {
+        top: 10px;
+        right: 10px;
+        gap: 4px;
+    }
+
+    .btn-map-ctrl-fab {
+        width: 34px !important;
+        height: 34px !important;
+        min-width: 34px !important;
+        min-height: 34px !important;
+        font-size: 13px !important;
+        border-radius: 8px !important;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15) !important;
+    }
+
+    /* 모바일에서는 도구함 토글 버튼 노출 */
+    .btn-toolbar-toggle {
+        display: flex !important;
+        background: #FFFFFF;
+        color: #1E293B;
+    }
+
+    .btn-toolbar-toggle.active {
+        background: #2563EB;
+        color: #FFFFFF;
+        border-color: #1D4ED8;
+    }
+
+    /* 모바일 툴바 그룹: 기본적으로 접혀있고, 토글 시 세로 드롭다운으로 확장 */
+    .map-toolbar-group {
+        display: none;
+        flex-direction: column;
+        position: absolute;
+        top: 40px;
+        right: 0;
+        background: rgba(255, 255, 255, 0.96);
+        backdrop-filter: blur(8px);
+        padding: 6px;
+        border-radius: 10px;
+        border: 1px solid #CBD5E1;
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
+        gap: 6px;
+        z-index: 600;
+    }
+
+    .map-toolbar-group.open {
+        display: flex;
+        animation: toolbarFadeIn 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    @keyframes toolbarFadeIn {
+        from { opacity: 0; transform: translateY(-8px) scale(0.95); }
+        to { opacity: 1; transform: translateY(0) scale(1); }
+    }
 }
 
 

@@ -23,7 +23,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1"></script>
     <!-- 커스텀 스타일 -->
-    <link rel="stylesheet" href="css/style.css?v=20261115G">
+    <link rel="stylesheet" href="css/style.css?v=20261117D">
 </head>
 <body>
 
@@ -953,16 +953,16 @@
 
             <!-- 좌측 GIS 관망 8대 레이어 On/Off 컨트롤러 (사용자 맞춤형 표출) -->
             <div id="gisLayerControlPanel" class="gis-layer-control-panel">
-                <div class="glc-header">
-                    <div class="glc-title-group">
+                <div class="glc-header" id="glcHeader">
+                    <div class="glc-title-group" id="glcTitleGroup">
                         <i class="fa-solid fa-layer-group" style="color:#2563EB;"></i>
                         <span class="glc-title">GIS 관망 레이어</span>
                     </div>
                     <div class="glc-header-btns">
-                        <button type="button" id="btnGlcExportGeoJson" class="glc-toggle-all-btn" title="현장 수정내역 반영 최신 GIS 내보내기" style="background:#10B981; border-color:#059669; color:#fff;"><i class="fa-solid fa-file-export"></i> GIS내보내기</button>
+                        <button type="button" id="btnGlcExportGeoJson" class="glc-toggle-all-btn" title="현장 수정내역 반영 최신 GIS 내보내기" style="background:#10B981; border-color:#059669; color:#fff;"><i class="fa-solid fa-file-export"></i> 내보내기</button>
                         <button type="button" id="btnGlcToggleAll" class="glc-toggle-all-btn" title="전체 레이어 일괄 켜기/끄기">전체</button>
-                        <button type="button" id="btnGlcCollapse" class="glc-collapse-btn" title="패널 접기/펼치기">
-                            <i class="fa-solid fa-chevron-left" id="glcCollapseIcon"></i>
+                        <button type="button" id="btnGlcCollapse" class="glc-collapse-btn" title="레이어 창 닫기">
+                            <i class="fa-solid fa-xmark" id="glcCollapseIcon"></i>
                         </button>
                     </div>
                 </div>
@@ -1506,83 +1506,90 @@
 
             <!-- 우측 상단 지도 컨트롤러 툴바 (검색, 로드뷰, 전체화면, 레이어 설정) -->
             <div class="map-top-right-controls" id="mapTopRightControls">
-                <!-- 1. 통합 검색 버튼 (Ctrl + F) -->
-                <button type="button" id="btnMapSearchToggle" class="btn-map-ctrl-fab" title="통합 주소·GIS 검색 (단축키: Ctrl + F)">
-                    <i class="fa-solid fa-magnifying-glass"></i>
+                <!-- 모바일 도구함 접기/펼치기 토글 버튼 -->
+                <button type="button" id="btnMapToolbarToggle" class="btn-map-ctrl-fab btn-toolbar-toggle" title="도구 모음 열기/닫기">
+                    <i class="fa-solid fa-screwdriver-wrench" id="toolbarToggleIcon"></i>
                 </button>
 
-                <!-- 2. 로드뷰(거리뷰) 모드 토글 버튼 -->
-                <button type="button" id="btnMapRoadview" class="btn-map-ctrl-fab" title="로드뷰 (거리뷰) 모드 (클릭 후 원하는 도로를 클릭하세요)">
-                    <i class="fa-solid fa-street-view" id="mapRoadviewIcon"></i>
-                </button>
-
-                <!-- 3. 지도 전체화면 토글 버튼 -->
-                <button type="button" id="btnMapFullscreen" class="btn-map-ctrl-fab" title="지도 전체화면 전환 (Fullscreen)">
-                    <i class="fa-solid fa-expand" id="mapFullscreenIcon"></i>
-                </button>
-
-                <!-- 4. 최신 GIS 파일(GeoJSON/QGIS/SHP) 내보내기 버튼 -->
-                <button type="button" id="btnExportGisGeoJson" class="btn-map-ctrl-fab" title="현장 수정내역(수정일시, 수정자)이 반영된 최신 GIS 파일(GeoJSON/QGIS) 다운로드" style="color:#10B981;">
-                    <i class="fa-solid fa-file-export"></i>
-                </button>
-
-                <!-- 5. 지도 레이어 설정 드롭다운 (아이콘 모양만 남김) -->
-                <div class="map-layer-dropdown-container" id="mapLayerContainer">
-                    <button type="button" id="btnMapLayerToggle" class="btn-map-ctrl-fab" title="배경지도 및 공간정보 레이어 설정">
-                        <i class="fa-solid fa-layer-group"></i>
+                <div class="map-toolbar-group" id="mapToolbarGroup">
+                    <!-- 1. 통합 검색 버튼 (Ctrl + F) -->
+                    <button type="button" id="btnMapSearchToggle" class="btn-map-ctrl-fab" title="통합 주소·GIS 검색 (단축키: Ctrl + F)">
+                        <i class="fa-solid fa-magnifying-glass"></i>
                     </button>
 
-                    <!-- 클릭 시 펼쳐지는 지도 설정 드롭다운 메뉴 -->
-                    <div class="map-layer-menu" id="mapLayerMenu" style="display:none;">
-                        <!-- 1. 배경지도 선택 (일반지도 vs 항공위성) -->
-                        <div class="mlm-section">
-                            <div class="mlm-section-header">
-                                <i class="fa-solid fa-map"></i> 배경지도 선택
-                            </div>
-                            <div class="mlm-base-grid">
-                                <button type="button" class="mlm-base-btn active" id="btnTileBase" title="VWorld 2D 표준 배경지도">
-                                    <div class="mlm-thumb mlm-thumb-base">
-                                        <i class="fa-solid fa-map-location-dot"></i>
-                                    </div>
-                                    <span class="mlm-label">일반지도</span>
-                                </button>
-                                <button type="button" class="mlm-base-btn" id="btnTileSat" title="VWorld 고해상도 항공위성 사진">
-                                    <div class="mlm-thumb mlm-thumb-sat">
-                                        <i class="fa-solid fa-earth-asia"></i>
-                                    </div>
-                                    <span class="mlm-label">항공위성</span>
-                                </button>
-                            </div>
-                        </div>
+                    <!-- 2. 로드뷰(거리뷰) 모드 토글 버튼 -->
+                    <button type="button" id="btnMapRoadview" class="btn-map-ctrl-fab" title="로드뷰 (거리뷰) 모드 (클릭 후 원하는 도로를 클릭하세요)">
+                        <i class="fa-solid fa-street-view" id="mapRoadviewIcon"></i>
+                    </button>
 
-                        <!-- 2. 부가 정보 오버레이 (연속지적도 & 도로명 라벨) -->
-                        <div class="mlm-section">
-                            <div class="mlm-section-header">
-                                <i class="fa-solid fa-draw-polygon"></i> 공간정보 레이어
-                            </div>
-                            <div class="mlm-overlay-list">
-                                <button type="button" class="mlm-overlay-row" id="btnToggleCadastral" title="국토교통부 연속지적도(필지선) ON/OFF">
-                                    <div class="mlm-row-left">
-                                        <i class="fa-solid fa-border-all" style="color:#8B5CF6;"></i>
-                                        <span>연속지적도 (필지선)</span>
-                                    </div>
-                                    <span class="mlm-toggle-switch" id="cadastralSwitch">OFF</span>
-                                </button>
-                                <button type="button" class="mlm-overlay-row active" id="btnToggleHybrid" title="VWorld 도로명/지명 하이브리드 라벨 ON/OFF">
-                                    <div class="mlm-row-left">
-                                        <i class="fa-solid fa-tags" style="color:#0284C7;"></i>
-                                        <span>지명 / 도로명 라벨</span>
-                                    </div>
-                                    <span class="mlm-toggle-switch on" id="hybridSwitch">ON</span>
-                                </button>
-                            </div>
-                        </div>
+                    <!-- 3. 지도 전체화면 토글 버튼 -->
+                    <button type="button" id="btnMapFullscreen" class="btn-map-ctrl-fab" title="지도 전체화면 전환 (Fullscreen)">
+                        <i class="fa-solid fa-expand" id="mapFullscreenIcon"></i>
+                    </button>
 
-                        <!-- 3. 중심 복귀 액션 -->
-                        <div class="mlm-footer">
-                            <button type="button" class="btn-mlm-reset" id="btnResetMapView" title="김해시 전체 관망 중심으로 지도 줌 이동">
-                                <i class="fa-solid fa-crosshairs"></i> 김해시 중심으로 줌 복귀
-                            </button>
+                    <!-- 4. 최신 GIS 파일(GeoJSON/QGIS/SHP) 내보내기 버튼 -->
+                    <button type="button" id="btnExportGisGeoJson" class="btn-map-ctrl-fab" title="현장 수정내역(수정일시, 수정자)이 반영된 최신 GIS 파일(GeoJSON/QGIS) 다운로드" style="color:#10B981;">
+                        <i class="fa-solid fa-file-export"></i>
+                    </button>
+
+                    <!-- 5. 지도 레이어 설정 드롭다운 (아이콘 모양만 남김) -->
+                    <div class="map-layer-dropdown-container" id="mapLayerContainer">
+                        <button type="button" id="btnMapLayerToggle" class="btn-map-ctrl-fab" title="배경지도 및 공간정보 레이어 설정">
+                            <i class="fa-solid fa-layer-group"></i>
+                        </button>
+
+                        <!-- 클릭 시 펼쳐지는 지도 설정 드롭다운 메뉴 -->
+                        <div class="map-layer-menu" id="mapLayerMenu" style="display:none;">
+                            <!-- 1. 배경지도 선택 (일반지도 vs 항공위성) -->
+                            <div class="mlm-section">
+                                <div class="mlm-section-header">
+                                    <i class="fa-solid fa-map"></i> 배경지도 선택
+                                </div>
+                                <div class="mlm-base-grid">
+                                    <button type="button" class="mlm-base-btn active" id="btnTileBase" title="VWorld 2D 표준 배경지도">
+                                        <div class="mlm-thumb mlm-thumb-base">
+                                            <i class="fa-solid fa-map-location-dot"></i>
+                                        </div>
+                                        <span class="mlm-label">일반지도</span>
+                                    </button>
+                                    <button type="button" class="mlm-base-btn" id="btnTileSat" title="VWorld 고해상도 항공위성 사진">
+                                        <div class="mlm-thumb mlm-thumb-sat">
+                                            <i class="fa-solid fa-earth-asia"></i>
+                                        </div>
+                                        <span class="mlm-label">항공위성</span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- 2. 부가 정보 오버레이 (연속지적도 & 도로명 라벨) -->
+                            <div class="mlm-section">
+                                <div class="mlm-section-header">
+                                    <i class="fa-solid fa-draw-polygon"></i> 공간정보 레이어
+                                </div>
+                                <div class="mlm-overlay-list">
+                                    <button type="button" class="mlm-overlay-row" id="btnToggleCadastral" title="국토교통부 연속지적도(필지선) ON/OFF">
+                                        <div class="mlm-row-left">
+                                            <i class="fa-solid fa-border-all" style="color:#8B5CF6;"></i>
+                                            <span>연속지적도 (필지선)</span>
+                                        </div>
+                                        <span class="mlm-toggle-switch" id="cadastralSwitch">OFF</span>
+                                    </button>
+                                    <button type="button" class="mlm-overlay-row active" id="btnToggleHybrid" title="VWorld 도로명/지명 하이브리드 라벨 ON/OFF">
+                                        <div class="mlm-row-left">
+                                            <i class="fa-solid fa-tags" style="color:#0284C7;"></i>
+                                            <span>지명 / 도로명 라벨</span>
+                                        </div>
+                                        <span class="mlm-toggle-switch on" id="hybridSwitch">ON</span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- 3. 중심 복귀 액션 -->
+                            <div class="mlm-footer">
+                                <button type="button" class="btn-mlm-reset" id="btnResetMapView" title="김해시 전체 관망 중심으로 지도 줌 이동">
+                                    <i class="fa-solid fa-crosshairs"></i> 김해시 중심으로 줌 복귀
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -2847,7 +2854,7 @@
 <script src="js/offlineStore.js?v=20261112f"></script>
 <!-- 김해시 실제 관망 GIS 공간데이터셋 (WGS84 변환) -->
 <script src="data/gimhae_gis_dataset.js?v=20261117B"></script>
-<script src="js/map.js?v=20261117C"></script>
+<script src="js/map.js?v=20261117D"></script>
 <!-- 수용가 부과량 데이터 (file:// 환경 CORS 차단 방지 및 고속 로드) -->
 <script defer src="data/consumer_charge_data.js"></script>
 <!-- 1. 유량 및 유수율 관리(수정작업) 100% 검증 기준 데이터셋 -->
@@ -2857,7 +2864,7 @@
 <script src="js/targetManager.js?v=20261113Q"></script>
 <!-- 9. 기준 및 근거 AI 어시스턴트 (노트북LM Grounded Engine) -->
 <script src="js/standardsLm.js?v=20261113Q"></script>
-<script src="js/app.js?v=20261117C"></script>
+<script src="js/app.js?v=20261117D"></script>
 
 <script>
     // 카카오톡 인앱 브라우저 감지 시 안내 및 크롬 전환

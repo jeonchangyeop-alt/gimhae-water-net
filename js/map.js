@@ -2145,7 +2145,12 @@ class WaterMapManager {
         const panel = document.getElementById('gisLayerControlPanel');
         if (!panel) return;
 
-        // 1. 접기 / 펼치기 버튼
+        // 모바일 기본값: 화면 너비가 768px 이하이면 접힌 상태로 시작하여 지도 가림 완전 방지
+        if (window.innerWidth <= 768) {
+            panel.classList.add('collapsed');
+        }
+
+        // 1. 접기 / 펼치기 버튼 (✕ 닫기)
         const btnCollapse = document.getElementById('btnGlcCollapse');
         if (btnCollapse) {
             btnCollapse.addEventListener('click', (e) => {
@@ -2153,6 +2158,14 @@ class WaterMapManager {
                 panel.classList.toggle('collapsed');
             });
         }
+
+        // 접혀있는 작은 레이어 아이콘을 클릭/터치하면 즉시 전체 패널 펼치기
+        panel.addEventListener('click', (e) => {
+            if (panel.classList.contains('collapsed')) {
+                e.stopPropagation();
+                panel.classList.remove('collapsed');
+            }
+        });
 
         // 2. 전체 일괄 켜기 / 끄기 토글 버튼
         const btnToggleAll = document.getElementById('btnGlcToggleAll');
