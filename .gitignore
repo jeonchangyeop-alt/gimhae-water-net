@@ -1,0 +1,8 @@
+# 임시 및 대용량 압축/추출 원본 파일 제외
+data/gimhae_gis_extracted/
+data/gis_temp/
+data/*.zip
+__pycache__/
+*.pyc
+.vscode/
+.idea/

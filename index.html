@@ -1,0 +1,2854 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>김해시 상수도 관망관리 시스템</title>
+    
+    <!-- Leaflet GIS CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    <!-- FontAwesome 아이콘 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
+    <!-- Firebase App & Realtime Database SDK (v8 compat) -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+    <!-- JSZip (클라우드 압축 페이로드 해제) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <!-- SheetJS (Excel 파싱) -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <!-- PDF.js (PDF 문서 클라이언트 고속 텍스트 추출 및 압축) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <!-- Chart.js 및 플러그인 (유량 분석 차트 & 누수수리 어노테이션) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1"></script>
+    <!-- 커스텀 스타일 -->
+    <link rel="stylesheet" href="css/style.css?v=20261115G">
+</head>
+<body>
+
+<div id="app-layout">
+    <!-- 1. 최상단 네비게이션 헤더 (GNB) -->
+    <header class="top-navbar">
+        <div class="header-left-group">
+            <div class="brand-section" id="btnBrandLogo" style="cursor:pointer;" title="1. 계통도 메인 화면으로 이동">
+                <div class="brand-logo-icon">
+                    <i class="fa-solid fa-water"></i>
+                </div>
+                <span class="brand-title">김해시 관망관리</span>
+                <span class="brand-badge" id="currentViewBadge">1. 계통도 모드</span>
+            </div>
+
+            <!-- 대메뉴 1: 계통도 (사각 박스 드래그&드롭 계통 캔버스) -->
+            <button class="nav-single-btn active" id="btnMenuTopology" title="김해시 전체 상수도 수리 공급 계통도">
+                <i class="fa-solid fa-diagram-project"></i>
+                <span>1. 계통도</span>
+            </button>
+
+            <!-- 대메뉴 2: 유수율분석 드롭다운 (전문 대시보드 뷰) -->
+            <div class="nav-dropdown">
+                <button class="nav-dropbtn" id="btnMenuRevenue">
+                    <i class="fa-solid fa-chart-pie"></i>
+                    <span>2. 유수율분석</span>
+                    <i class="fa-solid fa-chevron-down drop-arrow"></i>
+                </button>
+                <div class="dropdown-content">
+                    <div class="dropdown-header">유수율 전문 분석 대시보드</div>
+                    <a href="javascript:void(0)" class="dropdown-item" data-action="dash-supply">
+                        <i class="fa-solid fa-faucet" style="color:#0284c7;"></i>
+                        <div>
+                            <strong>공급량 분석</strong>
+                            <small>블록별 일공급량, 야간최소유량(MNF), 수압 분석</small>
+                        </div>
+                    </a>
+                    <a href="javascript:void(0)" class="dropdown-item" data-action="dash-charge">
+                        <i class="fa-solid fa-receipt" style="color:#10b981;"></i>
+                        <div>
+                            <strong>부과량 현황</strong>
+                            <small>수용가 검침 사용량 집계 및 블록별 월간 부과량 현황</small>
+                        </div>
+                    </a>
+                    <a href="javascript:void(0)" class="dropdown-item" data-action="dash-yield">
+                        <i class="fa-solid fa-chart-line" style="color:#8b5cf6;"></i>
+                        <div>
+                            <strong>유수율 리포트</strong>
+                            <small>공급량 대비 부과량 산출 및 누수량·통합 유수율</small>
+                        </div>
+                    </a>
+                    <a href="javascript:void(0)" class="dropdown-item" data-action="dash-target">
+                        <i class="fa-solid fa-bullseye" style="color:#f59e0b;"></i>
+                        <div>
+                            <strong>목표유수율 관리</strong>
+                            <small>기준/목표 유수율 달성·미달성 블록 필터 및 필요 MNF</small>
+                        </div>
+                    </a>
+                </div>
+            </div>
+
+            <!-- 대메뉴 3: 공종관리 드롭다운 (GIS 지도 현장조사 뷰) -->
+            <div class="nav-dropdown">
+                <button class="nav-dropbtn" id="btnMenuWork">
+                    <i class="fa-solid fa-screwdriver-wrench"></i>
+                    <span>3. 공종관리 (GIS)</span>
+                    <i class="fa-solid fa-chevron-down drop-arrow"></i>
+                </button>
+                <div class="dropdown-content">
+                    <div class="dropdown-header">현장 공종별 공간조사 업무</div>
+                    <a href="javascript:void(0)" class="dropdown-item" data-action="work-valve">
+                        <i class="fa-solid fa-gear" style="color:#d97706;"></i>
+                        <div>
+                            <strong>경계밸브조사</strong>
+                            <small>블록 경계 제수변 개폐상태, 회전수, 토사매몰</small>
+                        </div>
+                    </a>
+                    <a href="javascript:void(0)" class="dropdown-item" data-action="work-meter">
+                        <i class="fa-solid fa-faucet-drip" style="color:#0284c7;"></i>
+                        <div>
+                            <strong>수용가조사</strong>
+                            <small>계량기 검침, 구경, 수용가 상태, 고화질 사진</small>
+                        </div>
+                    </a>
+                    <a href="javascript:void(0)" class="dropdown-item" data-action="work-pressure">
+                        <i class="fa-solid fa-gauge-high" style="color:#10b981;"></i>
+                        <div>
+                            <strong>수압조사</strong>
+                            <small>소화전/급수전 정수압 및 동수압(kgf/cm²) 실측</small>
+                        </div>
+                    </a>
+                    <a href="javascript:void(0)" class="dropdown-item" data-action="work-leak">
+                        <i class="fa-solid fa-triangle-exclamation" style="color:#ef4444;"></i>
+                        <div>
+                            <strong>누수탐사 및 복구</strong>
+                            <small>청음 조사 지점 등록, 징후 기록, 복구 전후 사진</small>
+                        </div>
+                    </a>
+                </div>
+            </div>
+
+            <!-- 대메뉴 4: 불용관관리 -->
+            <button class="nav-single-btn" id="btnMenuUnused" title="김해시 불용관 관리">
+                <i class="fa-solid fa-link-slash"></i>
+                <span class="nav-num">4. </span><span>불용관관리</span>
+            </button>
+
+            <!-- 대메뉴 5: 노후관선별 -->
+            <button class="nav-single-btn" id="btnMenuAging" title="노후관 선별 및 개체 우선순위 평가">
+                <i class="fa-solid fa-clock-rotate-left"></i>
+                <span class="nav-num">5. </span><span>노후관선별</span>
+            </button>
+
+            <!-- 대메뉴 6: 블록현황도 -->
+            <button class="nav-single-btn" id="btnMenuBlockMap" title="김해시 블록 현황도">
+                <i class="fa-solid fa-cubes"></i>
+                <span class="nav-num">6. </span><span>블록현황도</span>
+            </button>
+
+            <!-- 대메뉴 7: 일정표 -->
+            <button class="nav-single-btn" id="btnMenuSchedule" title="현장 조사 및 정비 일정표">
+                <i class="fa-regular fa-calendar-days"></i>
+                <span class="nav-num">7. </span><span>일정표</span>
+            </button>
+
+            <!-- 대메뉴 8: 관리자모드 -->
+            <button class="nav-single-btn" id="btnMenuAdmin" title="통합 시스템 관리자 모드">
+                <i class="fa-solid fa-user-shield"></i>
+                <span class="nav-num">8. </span><span>관리자모드</span>
+            </button>
+
+            <!-- 대메뉴 9: 기준 및 근거 (노트북LM AI) -->
+            <button class="nav-single-btn" id="btnMenuStandards" title="기준 및 근거 AI 어시스턴트 (노트북LM 방식)">
+                <i class="fa-solid fa-book-bookmark"></i>
+                <span class="nav-num">9. </span><span>기준 및 근거</span>
+            </button>
+        </div>
+
+        <!-- 헤더 우측 유틸리티 (테마 설정) -->
+        <div class="header-controls">
+            <!-- 화면 테마 토글 버튼 (밤/낮모드) -->
+            <button id="btnThemeToggle" class="btn-theme-toggle" title="화면 테마 전환 (밤/낮모드)">
+                <i class="fa-solid fa-moon" style="color:#60A5FA;"></i>
+                <span id="themeToggleText">밤/낮모드 (밤)</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- ============================================================= -->
+    <!-- 뷰 1: [1. 계통도] 대화형 사각 박스 캔버스 뷰 (PDF 계통도 100% 반영) -->
+    <!-- ============================================================= -->
+    <div id="topologyViewContainer" class="main-viewport-container active-view">
+        <!-- topologyCanvas.js에서 동적 초기화 -->
+    </div>
+
+    <!-- ============================================================= -->
+    <!-- 뷰 2: [2. 유수율분석] 전문 대시보드 뷰 섹션                    -->
+    <!-- ============================================================= -->
+    <div id="dashboardViewContainer" class="main-viewport-container" style="display:none;">
+        <div class="dashboard-wrapper">
+            <div class="dashboard-header-bar">
+                <div class="dash-title-group">
+                    <h2><i class="fa-solid fa-chart-pie" style="color:var(--primary-light);"></i> 2. 김해시 유수율 분석 대시보드</h2>
+                    <span class="dash-subtitle">Water Manager Pro 분석 엔진 연동</span>
+                </div>
+                
+                <div class="dash-tab-nav">
+                    <button class="dash-tab-btn active" data-tab="dash-supply">
+                        <i class="fa-solid fa-faucet"></i> 1. 공급량 분석
+                    </button>
+                    <button class="dash-tab-btn" data-tab="dash-charge">
+                        <i class="fa-solid fa-receipt"></i> 2. 부과량 현황
+                    </button>
+                    <button class="dash-tab-btn" data-tab="dash-yield">
+                        <i class="fa-solid fa-chart-line"></i> 3. 유수율 리포트
+                    </button>
+                    <button class="dash-tab-btn" data-tab="dash-target">
+                        <i class="fa-solid fa-bullseye"></i> 4. 목표유수율 관리
+                    </button>
+                </div>
+
+                <div class="dash-actions">
+                    <button id="btnReturnToTopology" class="btn-header" style="background:#2563EB; border-color:#3B82F6;">
+                        <i class="fa-solid fa-diagram-project"></i> 1. 계통도로 돌아가기
+                    </button>
+                </div>
+            </div>
+
+            <div class="dashboard-scroll-body">
+                <!-- 공급량 분석 (2열 분할 UI: 좌측 일별 매트릭스 표 + 우측 상단 추천 결과값 + 우측 하단 유량·누수수리 차트) -->
+                <section id="sectionDashSupply" class="dash-section active">
+                    <div class="supply-split-container">
+                        <!-- 1. 좌측 영역 (빨간 테두리): 일별 블록별 결과 테이블 (드래그 스크롤 지원) -->
+                        <div class="supply-left-zone">
+                            <div class="supply-zone-header">
+                                <div class="zone-title-box">
+                                    <h3 class="zone-title"><i class="fa-solid fa-table-cells" style="color:#2563EB;"></i> 일별 블록 공급량 현황</h3>
+                                    <span class="badge-count" id="supplyTableCountBadge">0일분 / 0개 블록</span>
+                                </div>
+                                <div class="zone-actions">
+                                    <button class="dash-btn-sm secondary" id="btnExportSupplyDailyExcel">
+                                        <i class="fa-solid fa-file-excel" style="color:#10B981;"></i> 엑셀 저장
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- 필터 툴바 (2행 구성으로 655px에 최적화) -->
+                            <div class="supply-filter-toolbar">
+                                <div class="supply-filter-row">
+                                    <div class="filter-item-group">
+                                        <label><i class="fa-regular fa-calendar"></i> 기간:</label>
+                                        <input type="date" id="supplyStartDate" class="dash-input-sm" style="width:125px;">
+                                        <span>~</span>
+                                        <input type="date" id="supplyEndDate" class="dash-input-sm" style="width:125px;">
+                                        <button id="btnApplySupplyFilter" class="dash-btn-sm primary" style="padding:4px 10px;">조회</button>
+                                    </div>
+                                </div>
+                                <div class="supply-filter-row">
+                                    <div class="filter-item-group">
+                                        <div class="search-mini-box">
+                                            <i class="fa-solid fa-magnifying-glass"></i>
+                                            <input type="text" id="supplyBlockSearchInput" placeholder="블록 검색..." class="dash-input-sm" style="width:140px;">
+                                        </div>
+                                        <label class="custom-chk-label" title="해당 기간 내 누수수리가 있었던 블록만 필터링합니다">
+                                            <input type="checkbox" id="chkFilterRepairOnly">
+                                            <span style="color:#D97706; font-weight:600;">수리발생</span>
+                                        </label>
+                                        <label class="custom-chk-label" title="미수리 누수가 존재하는 블록만 필터링합니다">
+                                            <input type="checkbox" id="chkFilterUnrepairedOnly">
+                                            <span style="color:#DC2626; font-weight:600;">미수리</span>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 마우스 드래그 안내 및 7일치 슬라이드 넘기기 네비게이션 바 -->
+                            <div class="table-drag-hint">
+                                <div class="table-drag-hint-left">
+                                    <i class="fa-solid fa-hand-pointer"></i>
+                                    <span><strong>7일치 표출</strong> (마우스 드래그 또는 버튼으로 이동)</span>
+                                </div>
+                                <div class="table-slide-nav-group">
+                                    <button class="btn-slide-nav" id="btnTablePrev7Days" title="이전 7일 데이터 보기">
+                                        <i class="fa-solid fa-chevron-left"></i> 이전 7일
+                                    </button>
+                                    <button class="btn-slide-nav" id="btnTableNext7Days" title="다음 7일 데이터 보기">
+                                        다음 7일 <i class="fa-solid fa-chevron-right"></i>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- 드래그 스크롤 뷰포트 -->
+                            <div class="supply-table-viewport" id="supplyTableViewport">
+                                <table class="supply-matrix-table" id="supplyDailyTable">
+                                    <thead id="supplyDailyThead">
+                                        <tr id="supplyDailyTheadRow">
+                                            <th class="sticky-col-1">블록명</th>
+                                            <th class="sticky-col-2">데이터 항목</th>
+                                            <!-- 동적 날짜 헤더 -->
+                                        </tr>
+                                    </thead>
+                                    <tbody id="supplyDailyTbody">
+                                        <tr>
+                                            <td colspan="30" style="padding:40px; text-align:center; color:#94A3B8;">
+                                                데이터를 로딩 중입니다...
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- 2. 우측 영역: 상단 초록색 칸(추천 결과값) + 하단 파란색 칸(유량·누수수리 차트) -->
+                        <div class="supply-right-zone">
+                            <!-- 초록색 칸: 선택된 블록의 핵심 결과값 KPI 카드 -->
+                            <div class="supply-kpi-card" id="supplyKpiCard">
+                                <div class="kpi-header-row">
+                                    <div class="kpi-title-cluster">
+                                        <span class="kpi-tag-label">선택 블록</span>
+                                        <h3 id="kpiSelectedBlockName">구산1</h3>
+                                        <span class="badge-status-normal" id="kpiBlockStatusBadge">🟢 정상 수급</span>
+                                        <span class="badge-status-target" id="kpiBlockYieldBadge">✅ 목표유수율 달성</span>
+                                        <span class="badge-status-repair" id="kpiBlockRepairBadge">미수리 0건</span>
+                                    </div>
+                                    <div class="kpi-date-range-badge" id="kpiPeriodRangeBadge">2024.10.01 ~ 2024.10.31 (31일)</div>
+                                </div>
+
+                                <!-- 최근 달 기준 핵심 결과값 5대 카드 그리드 -->
+                                <div class="kpi-metric-grid">
+                                    <div class="metric-card-box">
+                                        <div class="metric-card-top">
+                                            <span class="m-label">일평균 공급량</span>
+                                            <i class="fa-solid fa-faucet-drip m-icon" style="color:#2563EB;"></i>
+                                        </div>
+                                        <div class="m-val" id="kpiMetricDailySupply">1,047 <span class="m-unit">m³/일</span></div>
+                                        <div class="m-sub" id="kpiMetricTotalSupply">당월 총 공급량: 31,397 m³</div>
+                                    </div>
+
+                                    <div class="metric-card-box">
+                                        <div class="metric-card-top">
+                                            <span class="m-label">야간최소유량 (MNF)</span>
+                                            <i class="fa-solid fa-moon m-icon" style="color:#DC2626;"></i>
+                                        </div>
+                                        <div class="m-val" id="kpiMetricNightMin" style="color:#DC2626;">20.6 <span class="m-unit">m³/h</span></div>
+                                        <div class="m-sub" id="kpiMetricTargetDiff">목표 19.3 m³/h (절감량: +1.3 m³/h)</div>
+                                    </div>
+
+                                    <div class="metric-card-box">
+                                        <div class="metric-card-top">
+                                            <span class="m-label">관망 수압 현황</span>
+                                            <i class="fa-solid fa-gauge-high m-icon" style="color:#059669;"></i>
+                                        </div>
+                                        <div class="m-val" id="kpiMetricPressureRange" style="color:#059669;">2.1 ~ 3.8 <span class="m-unit">kgf/cm²</span></div>
+                                        <div class="m-sub" id="kpiMetricPressureAvg">평균 2.9 kgf/cm² (적정 수압)</div>
+                                    </div>
+
+                                    <div class="metric-card-box">
+                                        <div class="metric-card-top">
+                                            <span class="m-label">유수율 현황</span>
+                                            <i class="fa-solid fa-chart-pie m-icon" style="color:#D97706;"></i>
+                                        </div>
+                                        <div class="m-val" id="kpiMetricYieldRatio" style="color:#D97706;">74.3 <span class="m-unit">%</span></div>
+                                        <div class="m-sub" id="kpiMetricYieldTarget">목표유수율: 85.0% (⚠️ 미달)</div>
+                                    </div>
+
+                                    <div class="metric-card-box">
+                                        <div class="metric-card-top">
+                                            <span class="m-label">누수 탐사 및 수리</span>
+                                            <i class="fa-solid fa-screwdriver-wrench m-icon" style="color:#EF4444;"></i>
+                                        </div>
+                                        <div class="m-val" id="kpiMetricRepairTotal" style="color:#EF4444;">누수적출 03 <span class="m-unit">건</span></div>
+                                        <div class="m-sub" id="kpiMetricRepairUnfixed" style="color:#DC2626; font-weight:600;">미수리 01건 (복구 02건)</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 파란색 칸: 유량 및 누수수리 일자 분석 그래프 -->
+                            <div class="supply-chart-card" id="supplyChartCard">
+                                <div class="chart-header-row">
+                                    <div class="chart-title-cluster" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                                        <h4><i class="fa-solid fa-chart-line" style="color:#2563EB;"></i> <span id="chartBlockTitleText">구산1</span> 유량 분석</h4>
+                                        <span id="chartYieldBadge" style="font-size: 11px; padding: 3px 10px; border-radius: 14px; background: rgba(255,149,0,0.15); color: #FF9500; border: 1px solid rgba(255,149,0,0.3); font-weight: 700; display:none;">⚠️ 목표유수율 미달</span>
+                                        <span id="chartRepairBadge" style="font-size: 11px; padding: 3px 10px; border-radius: 14px; background: rgba(255,59,48,0.12); color: #FF3B30; border: 1px solid rgba(255,59,48,0.25); font-weight: 700; display:none;">미수리 건수 : 01건</span>
+                                    </div>
+                                    <div class="chart-tools">
+                                        <button class="dash-btn-sm secondary" id="btnExportSupplyChartImage">
+                                            <i class="fa-solid fa-image"></i> 차트 저장
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <!-- 차트 가로 스크롤 영역 -->
+                                <div class="chart-viewport-box" id="chartViewportBox">
+                                    <div class="chart-inner-canvas-container" id="chartInnerCanvasContainer">
+                                        <canvas id="supplyAnalyticsChartCanvas"></canvas>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 부과량 현황 (좌측: 수용가별 표 + 우측: 컨트롤/대수용가/적정구경 분석) -->
+                <section id="sectionDashCharge" class="dash-section" style="display:none;">
+                    <div class="charge-split-container">
+                        <!-- 좌측: 수용가별 검침 데이터 테이블 -->
+                        <div class="charge-left-panel">
+                            <div class="charge-table-card">
+                                <div class="charge-table-header-row">
+                                    <div class="header-title-box">
+                                        <i class="fa-solid fa-users" style="color:#2563EB;"></i>
+                                        <h4>수용가별 검침 및 부과량 현황</h4>
+                                        <span class="badge-count" id="chargeTableCountBadge">0건 / 전체 0건</span>
+                                    </div>
+                                    <div class="header-action-box">
+                                        <div class="search-mini-box">
+                                            <i class="fa-solid fa-magnifying-glass"></i>
+                                            <input type="text" id="chargeConsumerSearchInput" placeholder="수용가번호/명 검색" class="dash-input-sm">
+                                            <button id="btnResetChargeSearch" style="display:none; background:none; border:none; cursor:pointer; color:#64748B; font-size:12px; padding:0 4px;" title="검색 초기화 (전체 목록)"><i class="fa-solid fa-xmark"></i></button>
+                                        </div>
+                                        <button class="dash-btn-sm secondary" id="btnExportConsumerExcel" title="엑셀 다운로드">
+                                            <i class="fa-solid fa-file-excel" style="color:#10B981;"></i> 엑셀 저장
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <!-- 테이블 뷰포트 -->
+                                <div class="charge-table-viewport" id="chargeTableViewport">
+                                    <table class="charge-consumer-table" id="chargeConsumerTable">
+                                        <thead>
+                                            <tr>
+                                                <th style="width:125px;">수용가번호</th>
+                                                <th>수용가명</th>
+                                                <th style="width:65px; text-align:center;">구경</th>
+                                                <th style="width:235px; text-align:center;">월별 사용량 (m³)<div style="font-size:10px; font-weight:normal; color:#475569; margin-top:1px;">2026.05 | 2026.06 | 2026.07</div></th>
+                                                <th style="width:195px; text-align:center;">진단 및 상태검토</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="chargeConsumerTbody">
+                                            <tr><td colspan="5" style="padding:40px; text-align:center; color:#94A3B8;">데이터를 불러오는 중입니다...</td></tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 우측: 항목 선택 컨트롤러 및 분석 패널 -->
+                        <div class="charge-right-panel">
+                            <!-- 1. 항목 선택 필터 컨트롤러 (블록 검색, 대수용가, 적정구경) -->
+                            <div class="charge-control-card">
+                                <div class="control-header-row">
+                                    <div class="control-title">
+                                        <i class="fa-solid fa-sliders" style="color:#2563EB;"></i>
+                                        <span>분석 항목 및 조건 선택</span>
+                                    </div>
+                                    <span class="charge-data-version-badge" id="chargeDataVersionBadge">최근 3개월 (2026.05 ~ 07)</span>
+                                </div>
+
+                                <div class="charge-filter-toolbar">
+                                    <!-- 블록 검색/선택 드롭다운 -->
+                                    <div class="filter-item-cluster">
+                                        <label for="chargeBlockSelect"><i class="fa-solid fa-cubes-stacked"></i> 분석 블록:</label>
+                                        <select id="chargeBlockSelect" class="dash-select-sm">
+                                            <option value="ALL">전체</option>
+                                            <option value="구산1">구산1</option>
+                                        </select>
+                                    </div>
+
+                                    <!-- 대수용가 필터 토글 버튼 -->
+                                    <button class="charge-toggle-btn" id="btnFilterLargeConsumers" data-active="false">
+                                        <i class="fa-solid fa-building"></i>
+                                        <span>대수용가</span>
+                                        <span class="btn-sub-tag">(일 100톤↑ 또는 75mm↑)</span>
+                                    </button>
+
+                                    <!-- 0톤수용가 필터 선택 -->
+                                    <div class="filter-item-cluster">
+                                        <label for="chargeZeroUsageSelect"><i class="fa-solid fa-droplet-slash" style="color:#DC2626;"></i> 0톤수용가:</label>
+                                        <select id="chargeZeroUsageSelect" class="dash-select-sm" style="font-weight:700; color:#DC2626;">
+                                            <option value="ALL">전체 (0톤 해제)</option>
+                                            <option value="ZERO_1M">최근 1개월 0톤</option>
+                                            <option value="ZERO_2M">최근 2개월 연속 0톤</option>
+                                            <option value="ZERO_3M">최근 3개월 연속 0톤</option>
+                                            <option value="ZERO_6M">최근 6개월 연속 0톤</option>
+                                        </select>
+                                    </div>
+
+                                    <!-- 이상수용가 필터 선택 -->
+                                    <div class="filter-item-cluster">
+                                        <label for="chargeAbnormalSelect"><i class="fa-solid fa-bolt" style="color:#D97706;"></i> 이상수용가:</label>
+                                        <select id="chargeAbnormalSelect" class="dash-select-sm" style="font-weight:700; color:#D97706;">
+                                            <option value="ALL">전체 (이상 해제)</option>
+                                            <option value="ABNORMAL_ALL">⚡ 이상수용가 전체 (급증+급감)</option>
+                                            <option value="ABNORMAL_SURGE">🔺 급증 수용가 (누수의심/용도변경)</option>
+                                            <option value="ABNORMAL_DROP">🔻 급감 수용가 (고장의심/불감수량)</option>
+                                        </select>
+                                    </div>
+
+                                    <!-- 적정구경 필터 선택 -->
+                                    <div class="filter-item-cluster">
+                                        <label for="chargeCaliberFilterSelect"><i class="fa-solid fa-gauge-simple-high"></i> 적정구경:</label>
+                                        <select id="chargeCaliberFilterSelect" class="dash-select-sm">
+                                            <option value="ALL">전체 구경</option>
+                                            <option value="OPTIMAL">✅ 적정 항목</option>
+                                            <option value="UNFIT">⚠️ 부적정 전체 (과대+과소)</option>
+                                            <option value="OVERSIZED">🔻 과대구경 (하향 권고)</option>
+                                            <option value="UNDERSIZED">🔺 과소구경 (상향 권고)</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 2. 개괄적 결과값 요약 3대 KPI 카드 -->
+                            <div class="charge-kpi-summary-grid">
+                                <div class="charge-kpi-box">
+                                    <div class="ck-top">
+                                        <span class="ck-label" id="ckBlockTotalLabel">블록 총 부과량</span>
+                                        <i class="fa-solid fa-faucet-drip ck-icon" style="color:#2563EB;"></i>
+                                    </div>
+                                    <div class="ck-val" id="ckBlockTotalDaily">0 <span class="ck-unit">m³/일</span></div>
+                                    <div class="ck-sub" id="ckBlockTotalConsumers">총 검침 수용가: 0 전</div>
+                                </div>
+
+                                <div class="charge-kpi-box">
+                                    <div class="ck-top">
+                                        <span class="ck-label" id="ckLargeConsumersLabel">대수용가 현황</span>
+                                        <i class="fa-solid fa-building ck-icon" style="color:#10B981;"></i>
+                                    </div>
+                                    <div class="ck-val" id="ckLargeConsumersVal" style="color:#10B981;">0 <span class="ck-unit">전 (0%)</span></div>
+                                    <div class="ck-sub" id="ckLargeUsageRatio">블록 총 부과량의 0% 점유</div>
+                                </div>
+
+                                <div class="charge-kpi-box">
+                                    <div class="ck-top">
+                                        <span class="ck-label" id="ckCaliberOptimalLabel">적정구경 검토 현황</span>
+                                        <i class="fa-solid fa-triangle-exclamation ck-icon" style="color:#F59E0B;"></i>
+                                    </div>
+                                    <div class="ck-val" id="ckCaliberOptimalVal" style="color:#F59E0B;">0 <span class="ck-unit">전 (0%)</span></div>
+                                    <div class="ck-sub" id="ckCaliberUnfitDetail">부적정 0전 (과대 0, 과소 0)</div>
+                                </div>
+                            </div>
+
+                            <!-- 3. 우측 하단: 상세 현황 패널 (대수용가 랭킹, 0톤수용가, 이상수용가, 적정구경 진단) -->
+                            <div class="charge-detail-card" id="chargeDetailCard">
+                                <div class="detail-card-header">
+                                    <div class="detail-header-tabs">
+                                        <button class="detail-tab-btn active" id="tabDetailLarge">
+                                            <i class="fa-solid fa-ranking-star"></i> 대수용가
+                                        </button>
+                                        <button class="detail-tab-btn" id="tabDetailZero">
+                                            <i class="fa-solid fa-droplet-slash" style="color:#DC2626;"></i> 0톤수용가
+                                        </button>
+                                        <button class="detail-tab-btn" id="tabDetailAbnormal">
+                                            <i class="fa-solid fa-bolt" style="color:#D97706;"></i> 이상수용가
+                                        </button>
+                                        <button class="detail-tab-btn" id="tabDetailCaliber">
+                                            <i class="fa-solid fa-screwdriver-wrench"></i> 구경개선권고
+                                        </button>
+                                    </div>
+                                    <span class="detail-desc-text" id="detailDescText">상위 대수용가 사용량 현황</span>
+                                </div>
+
+                                <!-- 탭 1 컨텐츠: 대수용가 상세 리스트 -->
+                                <div class="detail-tab-content" id="detailContentLarge">
+                                    <div class="detail-scroll-wrap" id="detailLargeListContainer">
+                                        <!-- 자바스크립트로 동적 렌더링 -->
+                                    </div>
+                                </div>
+
+                                <!-- 탭 2 컨텐츠: 0톤 수용가 상세 리스트 -->
+                                <div class="detail-tab-content" id="detailContentZero" style="display:none;">
+                                    <div class="detail-scroll-wrap" id="detailZeroListContainer">
+                                        <!-- 자바스크립트로 동적 렌더링 -->
+                                    </div>
+                                </div>
+
+                                <!-- 탭 3 컨텐츠: 이상수용가(급증/급감) 상세 리스트 -->
+                                <div class="detail-tab-content" id="detailContentAbnormal" style="display:none;">
+                                    <div class="detail-scroll-wrap" id="detailAbnormalListContainer">
+                                        <!-- 자바스크립트로 동적 렌더링 -->
+                                    </div>
+                                </div>
+
+                                <!-- 탭 4 컨텐츠: 적정구경 부적정 진단 및 개선 권고 리스트 -->
+                                <div class="detail-tab-content" id="detailContentCaliber" style="display:none;">
+                                    <div class="detail-scroll-wrap" id="detailCaliberListContainer">
+                                        <!-- 자바스크립트로 동적 렌더링 -->
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 3. 유수율 리포트 (2열 분할 UI: 좌측 블록별 달별 유수율 표 + 우측 상단 3개월 비교/차트 + 우측 하단 진단/수지분석) -->
+                <section id="sectionDashYield" class="dash-section" style="display:none;">
+                    <div class="yield-split-container">
+                        <!-- 좌측 영역: 블록별 달별 유수율 매트릭스 테이블 (참고사진 디자인 100% 매핑) -->
+                        <div class="yield-left-panel">
+                            <div class="yield-report-card">
+                                <!-- 상단 헤더 & 컨트롤 바 -->
+                                <div class="yield-header-bar">
+                                    <div class="yhb-top-row">
+                                        <div class="yhb-title-group">
+                                            <h3><i class="fa-solid fa-chart-line" style="color:#2563EB;"></i> 유수율 분석 리포트</h3>
+                                            <p>공급량과 부과량 자료를 기반으로 유수율을 산출합니다.</p>
+                                        </div>
+                                        <button type="button" class="btn-yield-reset" id="btnResetYieldReport" title="조회 기간 및 블록 초기화">
+                                            <i class="fa-solid fa-rotate-right"></i> 리포트 초기화
+                                        </button>
+                                    </div>
+                                    <div class="yhb-filter-row">
+                                        <div class="yhb-month-filter">
+                                            <label for="selectYieldStartMonth">시작 월:</label>
+                                            <select id="selectYieldStartMonth" class="yield-select-sm">
+                                                <!-- JS에서 25년 4월 ~ 26년 9월 렌더링 -->
+                                            </select>
+                                            <label for="selectYieldEndMonth" style="margin-left:8px;">종료 월:</label>
+                                            <select id="selectYieldEndMonth" class="yield-select-sm">
+                                                <!-- JS에서 25년 4월 ~ 26년 9월 렌더링 -->
+                                            </select>
+                                        </div>
+                                        <div class="yhb-btn-group">
+                                            <button type="button" id="btnAnalyzeYield" class="btn-yield-action primary">
+                                                <i class="fa-solid fa-magnifying-glass-chart"></i> 분석하기
+                                            </button>
+                                            <button type="button" id="btnExportYieldExcelNew" class="btn-yield-action success">
+                                                <i class="fa-solid fa-file-excel"></i> 엑셀 내보내기
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 테이블 뷰포트 (가로/세로 스크롤) -->
+                                <div class="yield-table-viewport drag-scrollable" id="yieldTableViewport">
+                                    <table class="yield-matrix-table" id="yieldMatrixTable">
+                                        <thead id="yieldMatrixHead">
+                                            <!-- 동적 헤더 생성 (블록명, 데이터 구분, 25년 4월, 25년 5월 ...) -->
+                                        </thead>
+                                        <tbody id="yieldMatrixBody">
+                                            <!-- 동적 바디 생성 (블록별 4행: 공급량(적산차), 부과량(일평균), 유수율(%), 야간최소(평균)) -->
+                                        </tbody>
+                                    </table>
+                                </div>
+                                
+                                <div class="yield-table-footer">
+                                    <span><i class="fa-solid fa-circle-info" style="color:#0284C7;"></i> 블록명을 클릭하면 우측에 <strong>최근 3개월 유수율·MNF 비교 및 종합 진단</strong>이 자동 연동됩니다.</span>
+                                    <span id="yieldTableSummaryBadge" class="yts-count-pill">조회: 18개월 / 58개 블록</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 우측 영역: 블록 선택 + 상단 최근 3개월 비교 & 차트 + 하단 건전성 진단 & 수지분석 -->
+                        <div class="yield-right-panel">
+                            <!-- 우측 상단 블록 선택 바 -->
+                            <div class="yield-block-bar">
+                                <div class="ybb-left">
+                                    <i class="fa-solid fa-cubes" style="color:#2563EB;"></i>
+                                    <strong>분석 블록:</strong>
+                                    <select id="selectYieldTargetBlock" class="yield-select-block">
+                                        <!-- 블록 목록 동적 렌더링 -->
+                                    </select>
+                                </div>
+                                <span class="ybb-badge" id="yieldCurrentBlockBadge">구산1 (소블록)</span>
+                            </div>
+
+                            <!-- 우측 상단 카드: 최근 3개월 유수율 및 야간최소유량 비교 -->
+                            <div class="yield-analysis-card">
+                                <div class="yac-header">
+                                    <div class="yac-title-box">
+                                        <i class="fa-solid fa-scale-balanced" style="color:#8B5CF6;"></i>
+                                        <h4>최근 3개월 유수율 및 야간최소유량 비교</h4>
+                                    </div>
+                                    <span class="yac-period-pill" id="yield3mPeriodPill">2026.06 ~ 2026.08</span>
+                                </div>
+
+                                <!-- 3개월 핵심 비교 지표 그리드 -->
+                                <div class="yield-3m-grid" id="yield3mGrid">
+                                    <!-- 동적 3개월 카드들 -->
+                                </div>
+
+                                <!-- 변화 추이 요약 바 -->
+                                <div class="yield-trend-summary-bar">
+                                    <div class="yts-item">
+                                        <span class="yts-label">유수율 변화 추이:</span>
+                                        <span class="yts-val" id="ytsRatioDiff">▲ +11.7%p (개선)</span>
+                                    </div>
+                                    <div class="yts-item">
+                                        <span class="yts-label">야간최소유량 추이:</span>
+                                        <span class="yts-val" id="ytsMnfDiff">▼ -0.9 m³/h (누수 저감)</span>
+                                    </div>
+                                </div>
+
+                                <!-- 유수율 & 야간최소유량 듀얼 차트 -->
+                                <div class="yield-chart-container">
+                                    <canvas id="chartYieldMnfTrend"></canvas>
+                                </div>
+                            </div>
+
+                            <!-- 우측 하단 카드: 블록 건전성 종합 진단 & 재정 손실(수지) 분석 (추천 기능) -->
+                            <div class="yield-analysis-card flex-bottom-card">
+                                <div class="yac-header">
+                                    <div class="yac-title-box">
+                                        <i class="fa-solid fa-shield-heart" style="color:#10B981;"></i>
+                                        <h4>블록 건전성 종합 진단 & 재정 손실(수지) 분석</h4>
+                                    </div>
+                                    <span class="yac-status-badge" id="yieldHealthBadge">정상 관리</span>
+                                </div>
+
+                                <!-- 수지분석 메트릭 3칸 -->
+                                <div class="yield-loss-metrics">
+                                    <div class="ylm-card">
+                                        <span class="ylm-title">월간 누수량 (추정)</span>
+                                        <strong class="ylm-val danger" id="valYieldLeakVol">0 m³</strong>
+                                        <span class="ylm-sub" id="valYieldLeakRatio">손실률 0.0%</span>
+                                    </div>
+                                    <div class="ylm-card">
+                                        <span class="ylm-title">월간 누수 손실액</span>
+                                        <strong class="ylm-val warning" id="valYieldLeakCost">약 0 만원</strong>
+                                        <span class="ylm-sub">생산원가 980원/m³</span>
+                                    </div>
+                                    <div class="ylm-card">
+                                        <span class="ylm-title">1%p 제고 시 연간절감</span>
+                                        <strong class="ylm-val success" id="valYieldSavingsYear">약 580 만원/년</strong>
+                                        <span class="ylm-sub">원가 회수 기대액</span>
+                                    </div>
+                                </div>
+
+                                <!-- 블록 진단 및 실무 AI 액션 가이드 -->
+                                <div class="yield-ai-advice-box" id="yieldAiAdviceBox">
+                                    <div class="yaa-header">
+                                        <i class="fa-solid fa-clipboard-check" style="color:#2563EB;"></i>
+                                        <strong>블록 운영 현장 권고 사항:</strong>
+                                    </div>
+                                    <p class="yaa-desc" id="yieldAiAdviceText">
+                                        로딩 중...
+                                    </p>
+                                </div>
+
+                                <!-- 하단 블록 바로가기 액션 버튼 -->
+                                <div class="yield-quick-actions">
+                                    <button type="button" class="btn-yield-jump" id="btnJumpToSupplyDetail">
+                                        <i class="fa-solid fa-faucet" style="color:#0284C7;"></i> 해당 블록 일일 공급량 분석 바로가기
+                                    </button>
+                                    <button type="button" class="btn-yield-jump" id="btnJumpToChargeDetail">
+                                        <i class="fa-solid fa-receipt" style="color:#10B981;"></i> 수용가별 검침/부과량 현황 바로가기
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 4. 목표유수율 관리 (2열 분할 UI: 좌측 결과 표 + 우측 총괄 & 삼계·덕산·명동 우선순위 추천) -->
+                <section id="sectionDashTarget" class="dash-section" style="display:none;">
+                    <div class="target-split-container">
+                        <!-- 1. 좌측 영역: 블록별 목표유수율 달성 분석 테이블 -->
+                        <div class="target-left-panel">
+                            <div class="target-report-card">
+                                <!-- 상단 헤더 & 컨트롤 바 -->
+                                <div class="target-header-bar">
+                                    <div class="thb-top-row">
+                                        <div class="thb-title-group">
+                                            <h3><i class="fa-solid fa-bullseye" style="color:#F59E0B;"></i> 목표유수율 관리 및 달성 현황</h3>
+                                            <p>Water Manager Pro 기준 데이터셋 연동 | 86개 관리 대상 블록 실시간 달성 여부 및 목표 절감량 분석</p>
+                                        </div>
+                                        <div class="thb-actions">
+                                            <button type="button" id="btnExportTargetExcel" class="btn-target-action success">
+                                                <i class="fa-solid fa-file-excel"></i> 엑셀 내보내기
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <!-- 2행 필터 바: 기준월, 권역계통 필터, 달성/미달성 필터, 검색창 -->
+                                    <div class="target-controls-row">
+                                        <div class="tc-group">
+                                            <label><i class="fa-regular fa-calendar-check"></i> 기준 월:</label>
+                                            <select id="targetMonthSelect" class="target-select-sm">
+                                                <!-- 26년 9월 (최신), 26년 8월 ... 25년 4월 -->
+                                            </select>
+                                        </div>
+
+                                        <div class="tc-group">
+                                            <label><i class="fa-solid fa-diagram-project"></i> 공급계통:</label>
+                                            <div class="target-btn-group" id="targetSystemFilters">
+                                                <button type="button" class="target-filter-pill active" data-sys="all">전체 계통</button>
+                                                <button type="button" class="target-filter-pill" data-sys="삼계계통">삼계권역</button>
+                                                <button type="button" class="target-filter-pill" data-sys="덕산계통">덕산권역</button>
+                                                <button type="button" class="target-filter-pill" data-sys="명동계통">명동권역</button>
+                                            </div>
+                                        </div>
+
+                                        <div class="tc-group">
+                                            <label><i class="fa-solid fa-filter"></i> 상태:</label>
+                                            <div class="target-btn-group" id="targetStatusFilters">
+                                                <button type="button" class="target-filter-pill active" data-status="all">전체 (<span id="tBadgeAll">86</span>)</button>
+                                                <button type="button" class="target-filter-pill status-achieved" data-status="achieved">✅ 달성 (<span id="tBadgeAchieved">0</span>)</button>
+                                                <button type="button" class="target-filter-pill status-unachieved" data-status="unachieved">⚠️ 미달성 (<span id="tBadgeUnachieved">0</span>)</button>
+                                            </div>
+                                        </div>
+
+                                        <div class="tc-search-box">
+                                            <i class="fa-solid fa-magnifying-glass"></i>
+                                            <input type="text" id="targetSearchInput" placeholder="블록 검색 (예: 구산3, 대동1)..." class="target-input-search">
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 테이블 뷰포트 (드래그 스크롤 지원) -->
+                                <div class="target-table-viewport drag-scrollable" id="targetTableViewport">
+                                    <table class="target-matrix-table" id="targetMatrixTable">
+                                        <thead>
+                                            <tr>
+                                                <th style="width:48px;">순번</th>
+                                                <th class="col-sticky-block">블록명</th>
+                                                <th style="width:85px;">공급계통</th>
+                                                <th style="width:80px;">기준<br>유수율(%)</th>
+                                                <th style="width:85px;">현재<br>유수율(%)</th>
+                                                <th style="width:80px;">목표<br>유수율(%)</th>
+                                                <th style="width:90px;">일공급량<br>(m³/일)</th>
+                                                <th style="width:90px;">일부과량<br>(m³/일)</th>
+                                                <th style="width:90px;">야간최소<br>(기준,m³/h)</th>
+                                                <th style="width:90px;">야간최소<br>(최근,m³/h)</th>
+                                                <th class="col-highlight-orange" style="width:95px;">목표절감량<br>(m³/h)</th>
+                                                <th class="col-highlight-green" style="width:95px;">목표야간최소<br>(m³/h)</th>
+                                                <th style="width:80px;">달성<br>유무</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="targetTableBody">
+                                            <!-- 동적 JS 렌더링 -->
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                <div class="target-table-footer">
+                                    <span><i class="fa-solid fa-circle-info" style="color:#0284C7;"></i> 블록을 클릭하면 우측 총괄 패널에 <strong>해당 블록의 권역 우선순위 및 누수절감 시뮬레이션</strong>이 연동됩니다.</span>
+                                    <span id="targetTableCountBadge" class="yts-count-pill">조회: 86개 블록</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 2. 우측 영역: 총괄 내용 & 추천 분석 & 삼계·덕산·명동 우선순위 블록 -->
+                        <div class="target-right-panel">
+                            <!-- 1. 핵심 총괄 KPI 4대 카드 그리드 -->
+                            <div class="target-kpi-grid">
+                                <div class="tkpi-card">
+                                    <div class="tkpi-title"><i class="fa-solid fa-cubes" style="color:#3B82F6;"></i> 관리 대상 블록</div>
+                                    <div class="tkpi-val" id="tkpiTotalBlocks">86 <span class="tkpi-unit">개소</span></div>
+                                    <div class="tkpi-sub">김해시 전체 소블록</div>
+                                </div>
+                                <div class="tkpi-card border-success">
+                                    <div class="tkpi-title"><i class="fa-solid fa-circle-check" style="color:#10B981;"></i> 목표 달성 블록</div>
+                                    <div class="tkpi-val text-success" id="tkpiAchievedBlocks">0 <span class="tkpi-unit">개소</span></div>
+                                    <div class="tkpi-sub" id="tkpiAchievedRate">달성률 0.0%</div>
+                                </div>
+                                <div class="tkpi-card border-warning">
+                                    <div class="tkpi-title"><i class="fa-solid fa-triangle-exclamation" style="color:#F59E0B;"></i> 집중 관리 대상</div>
+                                    <div class="tkpi-val text-warning" id="tkpiUnachievedBlocks">0 <span class="tkpi-unit">개소</span></div>
+                                    <div class="tkpi-sub" id="tkpiUnachievedRate">미달률 0.0%</div>
+                                </div>
+                                <div class="tkpi-card border-primary">
+                                    <div class="tkpi-title"><i class="fa-solid fa-faucet-drip" style="color:#6366F1;"></i> 총 누수절감 잠재량</div>
+                                    <div class="tkpi-val text-primary" id="tkpiTotalReduction">0.0 <span class="tkpi-unit">m³/h</span></div>
+                                    <div class="tkpi-sub" id="tkpiFinancialBenefit">연간 약 0억원 재정 절감</div>
+                                </div>
+                            </div>
+
+                            <!-- 2. 권역별(삼계 / 덕산 / 명동) 집중 관리 우선순위 블록 카드 -->
+                            <div class="target-priority-card">
+                                <div class="tpc-header">
+                                    <div class="tpc-title-box">
+                                        <i class="fa-solid fa-ranking-star" style="color:#F59E0B;"></i>
+                                        <h4>권역별(계통별) 집중 관리 우선순위 블록</h4>
+                                    </div>
+                                    <div class="tpc-system-tabs" id="tpcSystemTabs">
+                                        <button type="button" class="tpc-tab-btn active" data-target-sys="삼계계통">삼계권역</button>
+                                        <button type="button" class="tpc-tab-btn" data-target-sys="덕산계통">덕산권역</button>
+                                        <button type="button" class="tpc-tab-btn" data-target-sys="명동계통">명동권역</button>
+                                    </div>
+                                </div>
+
+                                <!-- 권역별 요약 바 -->
+                                <div class="tpc-system-summary-bar" id="tpcSystemSummaryBar">
+                                    <!-- JS에서 동적 채움 -->
+                                </div>
+
+                                <!-- 계통별 TOP 4 블록 리스트 -->
+                                <div class="tpc-priority-list" id="tpcSystemPriorityList">
+                                    <!-- JS에서 동적 채움 -->
+                                </div>
+                            </div>
+
+                            <!-- 3. 김해시 전체 긴급 관리 랭킹 TOP 5 종합 카드 -->
+                            <div class="target-top5-card">
+                                <div class="tt5-header">
+                                    <div class="tt5-title-box">
+                                        <i class="fa-solid fa-bolt" style="color:#EF4444;"></i>
+                                        <h4>김해시 전체 목표 절감량 긴급 랭킹 TOP 5</h4>
+                                    </div>
+                                    <span class="tt5-badge">누수탐사 우선 투입처</span>
+                                </div>
+                                <div class="tt5-list" id="targetTop5List">
+                                    <!-- JS에서 동적 채움 -->
+                                </div>
+                            </div>
+
+                            <!-- 4. 엔지니어링 종합 권고사항 & 실행 로드맵 -->
+                            <div class="target-guide-card">
+                                <div class="tgc-header">
+                                    <i class="fa-solid fa-clipboard-check" style="color:#10B981;"></i>
+                                    <h4>관망관리 현장 운영 및 누수감축 가이드라인</h4>
+                                </div>
+                                <div class="tgc-body" id="targetEngineeringGuide">
+                                    <!-- 맞춤 추천 가이드라인 -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================================= -->
+    <!-- 뷰 3: [3. 공종관리] VWorld GIS 지도 현장조사 뷰 섹션          -->
+    <!-- ============================================================= -->
+    <div id="mapViewContainer" class="main-viewport-container" style="display:none;">
+        <div id="workModeBanner" class="work-mode-banner" style="display:none;">
+            <div class="mode-info">
+                <span class="mode-icon"><i class="fa-solid fa-tag"></i></span>
+                <span class="mode-text" id="workModeText">작업 모드: 경계밸브조사</span>
+                <span class="mode-desc" id="workModeDesc">지도의 제수변 마커를 클릭하여 조사를 진행하세요.</span>
+            </div>
+            <button id="btnResetWorkMode" class="btn-reset-mode" title="1. 계통도 전체 보기로 복귀">
+                <i class="fa-solid fa-xmark"></i> 1. 계통도로 복귀
+            </button>
+        </div>
+
+        <div class="main-content">
+            <div id="map"></div>
+
+            <!-- GIS 공간데이터 초고속 비동기 로딩 프로그레스 인디케이터 오버레이 -->
+            <div id="gisLoadingOverlay" class="gis-loading-overlay" style="display:none;">
+                <div class="glo-card">
+                    <div class="glo-spinner-ring"></div>
+                    <div class="glo-content">
+                        <div class="glo-title">
+                            <i class="fa-solid fa-cloud-arrow-down" style="color:#2563EB;"></i>
+                            <span>김해시 관망 GIS 공간데이터 로딩 중</span>
+                        </div>
+                        <div class="glo-status-text" id="gloStatusText">관망 레이어 구성 준비 중...</div>
+                        <div class="glo-bar-track">
+                            <div class="glo-bar-fill" id="gloProgressBar" style="width: 0%;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 좌측 GIS 관망 8대 레이어 On/Off 컨트롤러 (사용자 맞춤형 표출) -->
+            <div id="gisLayerControlPanel" class="gis-layer-control-panel">
+                <div class="glc-header">
+                    <div class="glc-title-group">
+                        <i class="fa-solid fa-layer-group" style="color:#2563EB;"></i>
+                        <span class="glc-title">GIS 관망 레이어</span>
+                    </div>
+                    <div class="glc-header-btns">
+                        <button type="button" id="btnGlcExportGeoJson" class="glc-toggle-all-btn" title="현장 수정내역 반영 최신 GIS 내보내기" style="background:#10B981; border-color:#059669; color:#fff;"><i class="fa-solid fa-file-export"></i> GIS내보내기</button>
+                        <button type="button" id="btnGlcToggleAll" class="glc-toggle-all-btn" title="전체 레이어 일괄 켜기/끄기">전체</button>
+                        <button type="button" id="btnGlcCollapse" class="glc-collapse-btn" title="패널 접기/펼치기">
+                            <i class="fa-solid fa-chevron-left" id="glcCollapseIcon"></i>
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="glc-body" id="glcBody">
+                    <div class="glc-section-heading">관망 공간 레이어 (9종)</div>
+                    
+                    <!-- 1. 블록경계 -->
+                    <div class="glc-layer-group" id="grpLayer_blocks">
+                        <div class="glc-layer-row">
+                            <label class="glc-layer-item">
+                                <input type="checkbox" id="chkLayer_blocks" class="glc-checkbox" checked data-layer="blocks">
+                                <span class="glc-indicator" style="background:#8B5CF6; border-radius:3px; border:1px solid #7C3AED;"></span>
+                                <span class="glc-name">블록경계</span>
+                                <span class="glc-count-badge" id="cntLayer_blocks">103</span>
+                            </label>
+                            <button type="button" class="glc-expand-btn" data-target="glcSub_blocks" title="경계선 굵기 설정">
+                                <i class="fa-solid fa-chevron-down"></i>
+                            </button>
+                        </div>
+                        <div class="glc-sub-panel" id="glcSub_blocks" style="display:none;">
+                            <div class="glc-sub-item">
+                                <div class="glc-size-row">
+                                    <span class="glc-size-tag">선 굵기</span>
+                                    <input type="range" class="glc-size-slider" min="1" max="6" step="0.2" value="2.2" data-group="facilities" data-subtype="blocks">
+                                    <span class="glc-size-num" id="lblSize_facilities_blocks">2.2px</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 2. 정수장·배수지 -->
+                    <div class="glc-layer-group" id="grpLayer_reservoirs">
+                        <div class="glc-layer-row">
+                            <label class="glc-layer-item">
+                                <input type="checkbox" id="chkLayer_reservoirs" class="glc-checkbox" data-layer="reservoirs">
+                                <span class="glc-indicator" style="background:#0284C7; border-radius:50%;"><i class="fa-solid fa-water" style="font-size:7px; color:#fff;"></i></span>
+                                <span class="glc-name">정수·배수지</span>
+                                <span class="glc-count-badge" id="cntLayer_reservoirs">44</span>
+                            </label>
+                            <button type="button" class="glc-expand-btn" data-target="glcSub_reservoirs" title="마커 크기 설정">
+                                <i class="fa-solid fa-chevron-down"></i>
+                            </button>
+                        </div>
+                        <div class="glc-sub-panel" id="glcSub_reservoirs" style="display:none;">
+                            <div class="glc-sub-item">
+                                <div class="glc-size-row">
+                                    <span class="glc-size-tag">크기</span>
+                                    <input type="range" class="glc-size-slider" min="16" max="38" step="1" value="24" data-group="facilities" data-subtype="reservoirs">
+                                    <span class="glc-size-num" id="lblSize_facilities_reservoirs">24px</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 3. 가압장 -->
+                    <div class="glc-layer-group" id="grpLayer_boosters">
+                        <div class="glc-layer-row">
+                            <label class="glc-layer-item">
+                                <input type="checkbox" id="chkLayer_boosters" class="glc-checkbox" data-layer="boosters">
+                                <span class="glc-indicator" style="background:#EA580C; border-radius:50%;"><i class="fa-solid fa-bolt" style="font-size:7px; color:#fff;"></i></span>
+                                <span class="glc-name">가압장</span>
+                                <span class="glc-count-badge" id="cntLayer_boosters">63</span>
+                            </label>
+                            <button type="button" class="glc-expand-btn" data-target="glcSub_boosters" title="마커 크기 설정">
+                                <i class="fa-solid fa-chevron-down"></i>
+                            </button>
+                        </div>
+                        <div class="glc-sub-panel" id="glcSub_boosters" style="display:none;">
+                            <div class="glc-sub-item">
+                                <div class="glc-size-row">
+                                    <span class="glc-size-tag">크기</span>
+                                    <input type="range" class="glc-size-slider" min="14" max="36" step="1" value="22" data-group="facilities" data-subtype="boosters">
+                                    <span class="glc-size-num" id="lblSize_facilities_boosters">22px</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 4. 유량계 -->
+                    <div class="glc-layer-group" id="grpLayer_meters">
+                        <div class="glc-layer-row">
+                            <label class="glc-layer-item">
+                                <input type="checkbox" id="chkLayer_meters" class="glc-checkbox" data-layer="meters">
+                                <span class="glc-indicator" style="background:#10B981; border-radius:50%;"></span>
+                                <span class="glc-name">구역유량계</span>
+                                <span class="glc-count-badge" id="cntLayer_meters">326</span>
+                            </label>
+                            <button type="button" class="glc-expand-btn" data-target="glcSub_meters" title="심볼 크기 설정">
+                                <i class="fa-solid fa-chevron-down"></i>
+                            </button>
+                        </div>
+                        <div class="glc-sub-panel" id="glcSub_meters" style="display:none;">
+                            <div class="glc-sub-item">
+                                <div class="glc-size-row">
+                                    <span class="glc-size-tag">크기</span>
+                                    <input type="range" class="glc-size-slider" min="3" max="14" step="0.5" value="5.5" data-group="facilities" data-subtype="meters">
+                                    <span class="glc-size-num" id="lblSize_facilities_meters">5.5px</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 5. 상수관로 (LM) -->
+                    <div class="glc-layer-group" id="grpLayer_pipesLm">
+                        <div class="glc-layer-row">
+                            <label class="glc-layer-item">
+                                <input type="checkbox" id="chkLayer_pipesLm" class="glc-checkbox" checked data-layer="pipesLm">
+                                <span class="glc-indicator-line" style="background:linear-gradient(90deg, #2563EB 33%, #DC2626 33% 66%, #DC2626 66%); border-top:1px dashed #DC2626;"></span>
+                                <span class="glc-name">상수관로 (LM)</span>
+                                <span class="glc-count-badge" id="cntLayer_pipesLm">40,243</span>
+                            </label>
+                            <button type="button" class="glc-expand-btn" data-target="glcSub_pipesLm" title="관경별 색상 및 선 굵기 설정 펼치기">
+                                <i class="fa-solid fa-chevron-down"></i>
+                            </button>
+                        </div>
+                        <div class="glc-sub-panel" id="glcSub_pipesLm" style="display:none;">
+                            <!-- D250 이하 (0~250mm): 파란색 실선 -->
+                            <div class="glc-sub-item">
+                                <div class="glc-sub-header">
+                                    <label class="glc-sub-label">
+                                        <input type="checkbox" class="glc-sub-checkbox" checked data-group="pipesLm" data-subtype="d250">
+                                        <span class="glc-sub-symbol" style="color:#2563EB; font-weight:bold; font-size:14px; letter-spacing:-2px;">━━</span>
+                                        <span class="glc-sub-title">D250 이하 (파란색)</span>
+                                    </label>
+                                    <span class="glc-sub-badge" id="cntSub_pipesLm_d250">-</span>
+                                </div>
+                                <div class="glc-size-row">
+                                    <span class="glc-size-tag">선 굵기</span>
+                                    <input type="range" class="glc-size-slider" min="1" max="10" step="0.2" value="2.2" data-group="pipes" data-subtype="pipesLm_d250">
+                                    <span class="glc-size-num" id="lblSize_pipes_pipesLm_d250">2.2px</span>
+                                </div>
+                            </div>
+
+                            <!-- 250~500mm: 빨간색 실선 -->
+                            <div class="glc-sub-item">
+                                <div class="glc-sub-header">
+                                    <label class="glc-sub-label">
+                                        <input type="checkbox" class="glc-sub-checkbox" checked data-group="pipesLm" data-subtype="d500">
+                                        <span class="glc-sub-symbol" style="color:#DC2626; font-weight:bold; font-size:14px; letter-spacing:-2px;">━━</span>
+                                        <span class="glc-sub-title">250~500 (빨간색)</span>
+                                    </label>
+                                    <span class="glc-sub-badge" id="cntSub_pipesLm_d500">-</span>
+                                </div>
+                                <div class="glc-size-row">
+                                    <span class="glc-size-tag">선 굵기</span>
+                                    <input type="range" class="glc-size-slider" min="1.5" max="12" step="0.2" value="3.5" data-group="pipes" data-subtype="pipesLm_d500">
+                                    <span class="glc-size-num" id="lblSize_pipes_pipesLm_d500">3.5px</span>
+                                </div>
+                            </div>
+
+                            <!-- 500mm 초과: 빨간색 점선 -->
+                            <div class="glc-sub-item">
+                                <div class="glc-sub-header">
+                                    <label class="glc-sub-label">
+                                        <input type="checkbox" class="glc-sub-checkbox" checked data-group="pipesLm" data-subtype="dover">
+                                        <span class="glc-sub-symbol" style="color:#DC2626; font-weight:bold; font-size:14px; letter-spacing:-1px;">┅┅</span>
+                                        <span class="glc-sub-title">500 초과 (빨간색 점선)</span>
+                                    </label>
+                                    <span class="glc-sub-badge" id="cntSub_pipesLm_dover">-</span>
+                                </div>
+                                <div class="glc-size-row">
+                                    <span class="glc-size-tag">선 굵기</span>
+                                    <input type="range" class="glc-size-slider" min="2" max="14" step="0.2" value="4.8" data-group="pipes" data-subtype="pipesLm_dover">
+                                    <span class="glc-size-num" id="lblSize_pipes_pipesLm_dover">4.8px</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 6. 상수관로 (LM2) -->
+                    <div class="glc-layer-group" id="grpLayer_pipesLm2">
+                        <div class="glc-layer-row">
+                            <label class="glc-layer-item">
+                                <input type="checkbox" id="chkLayer_pipesLm2" class="glc-checkbox" data-layer="pipesLm2">
+                                <span class="glc-indicator-line" style="background:#4F46E5;"></span>
+                                <span class="glc-name">상수관로 (LM2)</span>
+                                <span class="glc-count-badge" id="cntLayer_pipesLm2">33,432</span>
+                            </label>
+                            <button type="button" class="glc-expand-btn" data-target="glcSub_pipesLm2" title="선 굵기 설정">
+                                <i class="fa-solid fa-chevron-down"></i>
+                            </button>
+                        </div>
+                        <div class="glc-sub-panel" id="glcSub_pipesLm2" style="display:none;">
+                            <div class="glc-sub-item">
+                                <div class="glc-size-row">
+                                    <span class="glc-size-tag">선 굵기</span>
+                                    <input type="range" class="glc-size-slider" min="1" max="8" step="0.2" value="1.8" data-group="pipes" data-subtype="pipesLm2">
+                                    <span class="glc-size-num" id="lblSize_pipes_pipesLm2">1.8px</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 7. 급수관로 -->
+                    <div class="glc-layer-group" id="grpLayer_servicePipes">
+                        <div class="glc-layer-row">
+                            <label class="glc-layer-item">
+                                <input type="checkbox" id="chkLayer_servicePipes" class="glc-checkbox" data-layer="servicePipes">
+                                <span class="glc-indicator-line" style="background:#06B6D4;"></span>
+                                <span class="glc-name">급수관로</span>
+                                <span class="glc-count-badge" id="cntLayer_servicePipes">48,125</span>
+                            </label>
+                            <button type="button" class="glc-expand-btn" data-target="glcSub_servicePipes" title="선 굵기 설정">
+                                <i class="fa-solid fa-chevron-down"></i>
+                            </button>
+                        </div>
+                        <div class="glc-sub-panel" id="glcSub_servicePipes" style="display:none;">
+                            <div class="glc-sub-item">
+                                <div class="glc-size-row">
+                                    <span class="glc-size-tag">선 굵기</span>
+                                    <input type="range" class="glc-size-slider" min="0.8" max="6" step="0.2" value="1.4" data-group="pipes" data-subtype="servicePipes">
+                                    <span class="glc-size-num" id="lblSize_pipes_servicePipes">1.4px</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 8. 밸브류 -->
+                    <div class="glc-layer-group" id="grpLayer_valves">
+                        <div class="glc-layer-row">
+                            <label class="glc-layer-item">
+                                <input type="checkbox" id="chkLayer_valves" class="glc-checkbox" checked data-layer="valves">
+                                <span class="glc-indicator" style="background:#F59E0B; border-radius:50%;"><i class="fa-solid fa-arrows-split-up-and-left" style="font-size:7px; color:#fff;"></i></span>
+                                <span class="glc-name">밸브류</span>
+                                <span class="glc-count-badge" id="cntLayer_valves">33,358</span>
+                            </label>
+                            <button type="button" class="glc-expand-btn" data-target="glcSub_valves" title="SA 코드별 소분류 및 심볼 크기 설정 펼치기">
+                                <i class="fa-solid fa-chevron-down"></i>
+                            </button>
+                        </div>
+                        <div class="glc-sub-panel" id="glcSub_valves" style="display:none;">
+                            <!-- SA200 제수변 -->
+                            <div class="glc-sub-item">
+                                <div class="glc-sub-header">
+                                    <label class="glc-sub-label">
+                                        <input type="checkbox" class="glc-sub-checkbox" checked data-group="valves" data-subtype="SA200">
+                                        <span class="glc-sub-symbol" style="color:#0F172A;">▷◁</span>
+                                        <span class="glc-sub-title">SA200 제수변</span>
+                                    </label>
+                                    <span class="glc-sub-badge">15,864</span>
+                                </div>
+                                <div class="glc-size-row">
+                                    <span class="glc-size-tag">크기</span>
+                                    <input type="range" class="glc-size-slider" min="2" max="14" step="0.5" value="5" data-group="valves" data-subtype="SA200">
+                                    <span class="glc-size-num" id="lblSize_valves_SA200">5.0px</span>
+                                </div>
+                            </div>
+
+                            <!-- SA910 제수변(원형) -->
+                            <div class="glc-sub-item">
+                                <div class="glc-sub-header">
+                                    <label class="glc-sub-label">
+                                        <input type="checkbox" class="glc-sub-checkbox" data-group="valves" data-subtype="SA910">
+                                        <span class="glc-sub-symbol" style="color:#0F172A;">⊗</span>
+                                        <span class="glc-sub-title">SA910 제수변(원형)</span>
+                                    </label>
+                                    <span class="glc-sub-badge">13,583</span>
+                                </div>
+                                <div class="glc-size-row">
+                                    <span class="glc-size-tag">크기</span>
+                                    <input type="range" class="glc-size-slider" min="2" max="14" step="0.5" value="5" data-group="valves" data-subtype="SA910">
+                                    <span class="glc-size-num" id="lblSize_valves_SA910">5.0px</span>
+                                </div>
+                            </div>
+
+                            <!-- SA119 소화전 -->
+                            <div class="glc-sub-item">
+                                <div class="glc-sub-header">
+                                    <label class="glc-sub-label">
+                                        <input type="checkbox" class="glc-sub-checkbox" checked data-group="valves" data-subtype="SA119">
+                                        <span class="glc-sub-symbol" style="color:#DC2626;">㊋</span>
+                                        <span class="glc-sub-title">SA119 소화전</span>
+                                    </label>
+                                    <span class="glc-sub-badge">1,706</span>
+                                </div>
+                                <div class="glc-size-row">
+                                    <span class="glc-size-tag">크기</span>
+                                    <input type="range" class="glc-size-slider" min="2" max="15" step="0.5" value="6" data-group="valves" data-subtype="SA119">
+                                    <span class="glc-size-num" id="lblSize_valves_SA119">6.0px</span>
+                                </div>
+                            </div>
+
+                            <!-- SA203 공기변 -->
+                            <div class="glc-sub-item">
+                                <div class="glc-sub-header">
+                                    <label class="glc-sub-label">
+                                        <input type="checkbox" class="glc-sub-checkbox" checked data-group="valves" data-subtype="SA203">
+                                        <span class="glc-sub-symbol" style="color:#0F172A;">Ⓐ</span>
+                                        <span class="glc-sub-title">SA203 공기변</span>
+                                    </label>
+                                    <span class="glc-sub-badge">1,031</span>
+                                </div>
+                                <div class="glc-size-row">
+                                    <span class="glc-size-tag">크기</span>
+                                    <input type="range" class="glc-size-slider" min="2" max="14" step="0.5" value="5" data-group="valves" data-subtype="SA203">
+                                    <span class="glc-size-num" id="lblSize_valves_SA203">5.0px</span>
+                                </div>
+                            </div>
+
+                            <!-- SA202 역지변 -->
+                            <div class="glc-sub-item">
+                                <div class="glc-sub-header">
+                                    <label class="glc-sub-label">
+                                        <input type="checkbox" class="glc-sub-checkbox" data-group="valves" data-subtype="SA202">
+                                        <span class="glc-sub-symbol" style="color:#DC2626;">⮑</span>
+                                        <span class="glc-sub-title">SA202 역지변</span>
+                                    </label>
+                                    <span class="glc-sub-badge">773</span>
+                                </div>
+                                <div class="glc-size-row">
+                                    <span class="glc-size-tag">크기</span>
+                                    <input type="range" class="glc-size-slider" min="2" max="14" step="0.5" value="5" data-group="valves" data-subtype="SA202">
+                                    <span class="glc-size-num" id="lblSize_valves_SA202">5.0px</span>
+                                </div>
+                            </div>
+
+                            <!-- SA205 이토변 -->
+                            <div class="glc-sub-item">
+                                <div class="glc-sub-header">
+                                    <label class="glc-sub-label">
+                                        <input type="checkbox" class="glc-sub-checkbox" checked data-group="valves" data-subtype="SA205">
+                                        <span class="glc-sub-symbol" style="color:#DC2626;">▷◁</span>
+                                        <span class="glc-sub-title">SA205 이토변</span>
+                                    </label>
+                                    <span class="glc-sub-badge">246</span>
+                                </div>
+                                <div class="glc-size-row">
+                                    <span class="glc-size-tag">크기</span>
+                                    <input type="range" class="glc-size-slider" min="2" max="14" step="0.5" value="5" data-group="valves" data-subtype="SA205">
+                                    <span class="glc-size-num" id="lblSize_valves_SA205">5.0px</span>
+                                </div>
+                            </div>
+
+                            <!-- SA204 감압변 -->
+                            <div class="glc-sub-item">
+                                <div class="glc-sub-header">
+                                    <label class="glc-sub-label">
+                                        <input type="checkbox" class="glc-sub-checkbox" checked data-group="valves" data-subtype="SA204">
+                                        <span class="glc-sub-symbol" style="color:#DC2626;">◇</span>
+                                        <span class="glc-sub-title">SA204 감압변</span>
+                                    </label>
+                                    <span class="glc-sub-badge">146</span>
+                                </div>
+                                <div class="glc-size-row">
+                                    <span class="glc-size-tag">크기</span>
+                                    <input type="range" class="glc-size-slider" min="2" max="14" step="0.5" value="5" data-group="valves" data-subtype="SA204">
+                                    <span class="glc-size-num" id="lblSize_valves_SA204">5.0px</span>
+                                </div>
+                            </div>
+
+                            <!-- SA201 제수변(특수) -->
+                            <div class="glc-sub-item">
+                                <div class="glc-sub-header">
+                                    <label class="glc-sub-label">
+                                        <input type="checkbox" class="glc-sub-checkbox" checked data-group="valves" data-subtype="SA201">
+                                        <span class="glc-sub-symbol" style="color:#0F172A;">▷◁</span>
+                                        <span class="glc-sub-title">SA201 제수변(특수)</span>
+                                    </label>
+                                    <span class="glc-sub-badge">7</span>
+                                </div>
+                                <div class="glc-size-row">
+                                    <span class="glc-size-tag">크기</span>
+                                    <input type="range" class="glc-size-slider" min="2" max="14" step="0.5" value="5" data-group="valves" data-subtype="SA201">
+                                    <span class="glc-size-num" id="lblSize_valves_SA201">5.0px</span>
+                                </div>
+                            </div>
+
+                            <!-- SA220 밸브기타 -->
+                            <div class="glc-sub-item">
+                                <div class="glc-sub-header">
+                                    <label class="glc-sub-label">
+                                        <input type="checkbox" class="glc-sub-checkbox" checked data-group="valves" data-subtype="SA220">
+                                        <span class="glc-sub-symbol" style="color:#0F172A;">▷◁</span>
+                                        <span class="glc-sub-title">SA220 밸브기타</span>
+                                    </label>
+                                    <span class="glc-sub-badge">2</span>
+                                </div>
+                                <div class="glc-size-row">
+                                    <span class="glc-size-tag">크기</span>
+                                    <input type="range" class="glc-size-slider" min="2" max="14" step="0.5" value="5" data-group="valves" data-subtype="SA220">
+                                    <span class="glc-size-num" id="lblSize_valves_SA220">5.0px</span>
+                                </div>
+                            </div>
+
+                            <!-- 기타/미분류 -->
+                            <div class="glc-sub-item">
+                                <div class="glc-sub-header">
+                                    <label class="glc-sub-label">
+                                        <input type="checkbox" class="glc-sub-checkbox" checked data-group="valves" data-subtype="OTHER">
+                                        <span class="glc-sub-symbol" style="color:#0F172A;">▷◁</span>
+                                        <span class="glc-sub-title">기타 밸브류</span>
+                                    </label>
+                                    <span class="glc-sub-badge">3</span>
+                                </div>
+                                <div class="glc-size-row">
+                                    <span class="glc-size-tag">크기</span>
+                                    <input type="range" class="glc-size-slider" min="2" max="14" step="0.5" value="5" data-group="valves" data-subtype="OTHER">
+                                    <span class="glc-size-num" id="lblSize_valves_OTHER">5.0px</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 9. 부과 수용가 (3대 소분류) -->
+                    <div class="glc-layer-group" id="grpLayer_billing">
+                        <div class="glc-layer-row">
+                            <label class="glc-layer-item">
+                                <input type="checkbox" id="chkLayer_billing" class="glc-checkbox" data-layer="billing">
+                                <span class="glc-indicator" style="background:#10B981; border-radius:50%;"><i class="fa-solid fa-house-user" style="font-size:7px; color:#fff;"></i></span>
+                                <span class="glc-name">부과 수용가</span>
+                                <span class="glc-count-badge" id="cntLayer_billing">55,699</span>
+                            </label>
+                            <button type="button" class="glc-expand-btn" data-target="glcSub_billing" title="수용가 소분류 및 심볼 크기 설정 펼치기">
+                                <i class="fa-solid fa-chevron-down"></i>
+                            </button>
+                        </div>
+                        <div class="glc-sub-panel" id="glcSub_billing" style="display:none;">
+                            <!-- 일반 수용가 -->
+                            <div class="glc-sub-item">
+                                <div class="glc-sub-header">
+                                    <label class="glc-sub-label">
+                                        <input type="checkbox" class="glc-sub-checkbox" checked data-group="billing" data-subtype="normal">
+                                        <span class="glc-sub-dot" style="background:#10B981;"></span>
+                                        <span class="glc-sub-title">일반 수용가</span>
+                                    </label>
+                                    <span class="glc-sub-badge">53,068</span>
+                                </div>
+                                <div class="glc-size-row">
+                                    <span class="glc-size-tag">크기</span>
+                                    <input type="range" class="glc-size-slider" min="1.5" max="12" step="0.5" value="3.5" data-group="billing" data-subtype="normal">
+                                    <span class="glc-size-num" id="lblSize_billing_normal">3.5px</span>
+                                </div>
+                            </div>
+
+                            <!-- 다량 수용가 -->
+                            <div class="glc-sub-item">
+                                <div class="glc-sub-header">
+                                    <label class="glc-sub-label">
+                                        <input type="checkbox" class="glc-sub-checkbox" checked data-group="billing" data-subtype="bulk">
+                                        <span class="glc-sub-dot" style="background:#8B5CF6;"></span>
+                                        <span class="glc-sub-title">다량 수용가 (300m³↑)</span>
+                                    </label>
+                                    <span class="glc-sub-badge">1,885</span>
+                                </div>
+                                <div class="glc-size-row">
+                                    <span class="glc-size-tag">크기</span>
+                                    <input type="range" class="glc-size-slider" min="2" max="15" step="0.5" value="5" data-group="billing" data-subtype="bulk">
+                                    <span class="glc-size-num" id="lblSize_billing_bulk">5.0px</span>
+                                </div>
+                            </div>
+
+                            <!-- 폐전 수용가 -->
+                            <div class="glc-sub-item">
+                                <div class="glc-sub-header">
+                                    <label class="glc-sub-label">
+                                        <input type="checkbox" class="glc-sub-checkbox" checked data-group="billing" data-subtype="closed">
+                                        <span class="glc-sub-dot" style="background:#94A3B8;"></span>
+                                        <span class="glc-sub-title">폐전 수용가</span>
+                                    </label>
+                                    <span class="glc-sub-badge">746</span>
+                                </div>
+                                <div class="glc-size-row">
+                                    <span class="glc-size-tag">크기</span>
+                                    <input type="range" class="glc-size-slider" min="1.5" max="10" step="0.5" value="3" data-group="billing" data-subtype="closed">
+                                    <span class="glc-size-num" id="lblSize_billing_closed">3.0px</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="glc-divider"></div>
+                    <div class="glc-section-heading">국토교통부 배경지도</div>
+
+                    <!-- 하이브리드 지명/도로 라벨 -->
+                    <label class="glc-layer-item">
+                        <input type="checkbox" id="chkLayer_hybrid" class="glc-checkbox" checked data-layer="hybrid">
+                        <span class="glc-indicator" style="background:#64748B; border-radius:3px;"></span>
+                        <span class="glc-name">지명/도로 라벨</span>
+                    </label>
+
+                    <!-- 연속지적도 -->
+                    <label class="glc-layer-item">
+                        <input type="checkbox" id="chkLayer_cadastral" class="glc-checkbox" data-layer="cadastral">
+                        <span class="glc-indicator" style="background:#EF4444; border-radius:3px;"></span>
+                        <span class="glc-name">연속지적도 (필지)</span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- 국토교통부 VWorld 및 관망 GIS 통합 검색 모달 (Ctrl + F 호출 / 기본 숨김) -->
+            <div class="vworld-search-modal-backdrop" id="vworldSearchBackdrop" style="display:none;">
+                <div class="vworld-search-modal" id="vworldSearchModal">
+                    <div class="vsm-header">
+                        <div class="vsm-input-row">
+                            <div class="vworld-brand-pill" id="btnVworldBrand" title="국토교통부 브이월드(VWorld) 공간정보 오픈플랫폼 연동">
+                                <i class="fa-solid fa-earth-asia"></i>
+                                <span>VWorld & GIS</span>
+                                <span class="vworld-status-dot online" id="vworldStatusDot" title="VWorld API 연동 상태: 정상"></span>
+                            </div>
+                            <div class="vsm-input-group">
+                                <i class="fa-solid fa-magnifying-glass vsm-input-icon"></i>
+                                <input type="text" id="vworldAddressInput" class="vsm-input" placeholder="주소, 시설물(가압장·배수지·밸브·계량기), 관망 블록명 검색..." autocomplete="off" spellcheck="false">
+                                <button type="button" id="btnVworldClear" class="vsm-clear-btn" style="display:none;" title="검색어 지우기">
+                                    <i class="fa-solid fa-xmark"></i>
+                                </button>
+                            </div>
+                            <div class="vsm-kbd-badge" title="단축키 안내">
+                                <kbd>Ctrl</kbd>+<kbd>F</kbd>
+                            </div>
+                            <button type="button" id="btnVsmClose" class="vsm-close-btn" title="닫기 (ESC)">
+                                <i class="fa-solid fa-xmark"></i>
+                            </button>
+                        </div>
+
+                        <!-- 빠른 추천 주소 및 시설물 칩 (원클릭 검색) -->
+                        <div class="vworld-quick-chips" id="vworldQuickChips">
+                            <span class="vchip-title"><i class="fa-solid fa-bolt"></i> 빠른 검색:</span>
+                            <button type="button" class="vchip" data-query="삼계가압장"><i class="fa-solid fa-bolt-lightning"></i> 삼계가압장</button>
+                            <button type="button" class="vchip" data-query="구산가압장"><i class="fa-solid fa-bolt-lightning"></i> 구산가압장</button>
+                            <button type="button" class="vchip" data-query="구산3"><i class="fa-solid fa-cubes"></i> 구산3(블록)</button>
+                            <button type="button" class="vchip" data-query="삼계배수지"><i class="fa-solid fa-water"></i> 삼계배수지</button>
+                            <button type="button" class="vchip" data-query="김해대로 2401">김해대로 2401</button>
+                            <button type="button" class="vchip" data-query="김해시청">김해시청</button>
+                        </div>
+                    </div>
+
+                    <!-- 검색 결과 드롭다운 목록 (키보드 화살표 이동 지원) -->
+                    <div class="vworld-results-dropdown" id="vworldResultsDropdown" style="display:none;">
+                        <div class="vrd-header">
+                            <span class="vrd-title"><i class="fa-solid fa-list-check" style="color:var(--primary);"></i> 검색 결과 <strong id="vrdCount">0</strong>건</span>
+                            <span class="vrd-badge" id="vrdBadge">GIS & VWorld 통합</span>
+                            <span class="vrd-nav-hint"><kbd>↑</kbd><kbd>↓</kbd> 이동 &nbsp; <kbd>Enter</kbd> 선택 &nbsp; <kbd>ESC</kbd> 닫기</span>
+                        </div>
+                        <div class="vrd-list" id="vrdList">
+                            <!-- 동적 주소 및 GIS 검색 항목 -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 우측 상단 지도 컨트롤러 툴바 (검색, 로드뷰, 전체화면, 레이어 설정) -->
+            <div class="map-top-right-controls" id="mapTopRightControls">
+                <!-- 1. 통합 검색 버튼 (Ctrl + F) -->
+                <button type="button" id="btnMapSearchToggle" class="btn-map-ctrl-fab" title="통합 주소·GIS 검색 (단축키: Ctrl + F)">
+                    <i class="fa-solid fa-magnifying-glass"></i>
+                </button>
+
+                <!-- 2. 로드뷰(거리뷰) 모드 토글 버튼 -->
+                <button type="button" id="btnMapRoadview" class="btn-map-ctrl-fab" title="로드뷰 (거리뷰) 모드 (클릭 후 원하는 도로를 클릭하세요)">
+                    <i class="fa-solid fa-street-view" id="mapRoadviewIcon"></i>
+                </button>
+
+                <!-- 3. 지도 전체화면 토글 버튼 -->
+                <button type="button" id="btnMapFullscreen" class="btn-map-ctrl-fab" title="지도 전체화면 전환 (Fullscreen)">
+                    <i class="fa-solid fa-expand" id="mapFullscreenIcon"></i>
+                </button>
+
+                <!-- 4. 최신 GIS 파일(GeoJSON/QGIS/SHP) 내보내기 버튼 -->
+                <button type="button" id="btnExportGisGeoJson" class="btn-map-ctrl-fab" title="현장 수정내역(수정일시, 수정자)이 반영된 최신 GIS 파일(GeoJSON/QGIS) 다운로드" style="color:#10B981;">
+                    <i class="fa-solid fa-file-export"></i>
+                </button>
+
+                <!-- 5. 지도 레이어 설정 드롭다운 (아이콘 모양만 남김) -->
+                <div class="map-layer-dropdown-container" id="mapLayerContainer">
+                    <button type="button" id="btnMapLayerToggle" class="btn-map-ctrl-fab" title="배경지도 및 공간정보 레이어 설정">
+                        <i class="fa-solid fa-layer-group"></i>
+                    </button>
+
+                    <!-- 클릭 시 펼쳐지는 지도 설정 드롭다운 메뉴 -->
+                    <div class="map-layer-menu" id="mapLayerMenu" style="display:none;">
+                        <!-- 1. 배경지도 선택 (일반지도 vs 항공위성) -->
+                        <div class="mlm-section">
+                            <div class="mlm-section-header">
+                                <i class="fa-solid fa-map"></i> 배경지도 선택
+                            </div>
+                            <div class="mlm-base-grid">
+                                <button type="button" class="mlm-base-btn active" id="btnTileBase" title="VWorld 2D 표준 배경지도">
+                                    <div class="mlm-thumb mlm-thumb-base">
+                                        <i class="fa-solid fa-map-location-dot"></i>
+                                    </div>
+                                    <span class="mlm-label">일반지도</span>
+                                </button>
+                                <button type="button" class="mlm-base-btn" id="btnTileSat" title="VWorld 고해상도 항공위성 사진">
+                                    <div class="mlm-thumb mlm-thumb-sat">
+                                        <i class="fa-solid fa-earth-asia"></i>
+                                    </div>
+                                    <span class="mlm-label">항공위성</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- 2. 부가 정보 오버레이 (연속지적도 & 도로명 라벨) -->
+                        <div class="mlm-section">
+                            <div class="mlm-section-header">
+                                <i class="fa-solid fa-draw-polygon"></i> 공간정보 레이어
+                            </div>
+                            <div class="mlm-overlay-list">
+                                <button type="button" class="mlm-overlay-row" id="btnToggleCadastral" title="국토교통부 연속지적도(필지선) ON/OFF">
+                                    <div class="mlm-row-left">
+                                        <i class="fa-solid fa-border-all" style="color:#8B5CF6;"></i>
+                                        <span>연속지적도 (필지선)</span>
+                                    </div>
+                                    <span class="mlm-toggle-switch" id="cadastralSwitch">OFF</span>
+                                </button>
+                                <button type="button" class="mlm-overlay-row active" id="btnToggleHybrid" title="VWorld 도로명/지명 하이브리드 라벨 ON/OFF">
+                                    <div class="mlm-row-left">
+                                        <i class="fa-solid fa-tags" style="color:#0284C7;"></i>
+                                        <span>지명 / 도로명 라벨</span>
+                                    </div>
+                                    <span class="mlm-toggle-switch on" id="hybridSwitch">ON</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- 3. 중심 복귀 액션 -->
+                        <div class="mlm-footer">
+                            <button type="button" class="btn-mlm-reset" id="btnResetMapView" title="김해시 전체 관망 중심으로 지도 줌 이동">
+                                <i class="fa-solid fa-crosshairs"></i> 김해시 중심으로 줌 복귀
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 로드뷰 활성화 알림 플로팅 바 -->
+            <div class="roadview-mode-banner" id="roadviewModeBanner" style="display:none;">
+                <div class="rvb-left">
+                    <i class="fa-solid fa-street-view"></i>
+                    <span><strong>로드뷰 모드</strong>: 지도의 도로나 시설물을 클릭하면 360° 로드뷰가 열립니다.</span>
+                </div>
+                <button type="button" id="btnCancelRoadviewMode" class="btn-cancel-rv-mode" title="로드뷰 모드 종료 (ESC)">
+                    <i class="fa-solid fa-xmark"></i> 닫기
+                </button>
+            </div>
+
+            <!-- 지도 마우스 우클릭 GIS 컨텍스트 메뉴 -->
+            <div class="map-context-menu" id="mapContextMenu" style="display:none;">
+                <div class="mcm-header">
+                    <i class="fa-solid fa-crosshairs"></i>
+                    <span id="mcmCoordText">35.228512, 128.889345</span>
+                </div>
+                <button type="button" class="mcm-item" id="mcmBtnSearchAddress">
+                    <i class="fa-solid fa-magnifying-glass-location" style="color:#2563EB;"></i>
+                    <strong class="mcm-simple-label">위치확인</strong>
+                </button>
+                <button type="button" class="mcm-item" id="mcmBtnRoadview">
+                    <i class="fa-solid fa-street-view" style="color:#D97706;"></i>
+                    <strong class="mcm-simple-label">로드뷰</strong>
+                </button>
+                <button type="button" class="mcm-item" id="mcmBtnSurvey">
+                    <i class="fa-solid fa-clipboard-check" style="color:#10B981;"></i>
+                    <strong class="mcm-simple-label">현장조사 등록</strong>
+                </button>
+                <div class="mcm-divider"></div>
+                <button type="button" class="mcm-item mcm-item-sm" id="mcmBtnCopyCoord">
+                    <i class="fa-regular fa-copy" style="color:#64748B;"></i>
+                    <span>GPS 좌표 복사</span>
+                </button>
+            </div>
+
+            <!-- 현장조사 패널 플로팅 토글 버튼 -->
+            <button id="btnToggleSidePanel" class="btn-floating-side-panel" title="공종 현장조사·DB 패널 열기/닫기">
+                <i class="fa-solid fa-clipboard-list"></i>
+                <span id="floatingPanelText">조사·DB 패널</span>
+            </button>
+
+            <!-- 우측 관망 DB 및 현장조사 패널 (기본 상태는 지도가 전체 화면을 차지하도록 닫힘) -->
+            <aside id="sidePanel" class="side-panel collapsed">
+                <!-- 사이드 패널 좌우 너비 조절 핸들 -->
+                <div class="panel-width-resizer" id="sidePanelWidthResizer" title="좌우로 드래그하여 패널 너비를 조절할 수 있습니다"></div>
+
+                <div class="side-panel-header">
+                    <div class="side-panel-title">
+                        <i class="fa-solid fa-clipboard-list" style="color:var(--primary);"></i>
+                        <span id="sidePanelMainTitle">관망 DB 및 현장 정보</span>
+                    </div>
+                    <button id="btnClosePanel" class="btn-close-panel" title="패널 닫기">&times;</button>
+                </div>
+
+                <div class="panel-tabs">
+                    <button class="tab-btn active" data-tab="surveyTab"><i class="fa-solid fa-circle-info"></i> 상세정보·DB</button>
+                    <button class="tab-btn" data-tab="searchTab"><i class="fa-solid fa-list-check"></i> <span id="tabSearchLabel">시설물 목록</span></button>
+                    <button class="tab-btn" data-tab="historyTab"><i class="fa-solid fa-clock-rotate-left"></i> 조사 이력 (<span id="historyCountBadge">0</span>)</button>
+                </div>
+
+                <div class="panel-body">
+                    <div id="surveyTab" class="tab-content-pane" style="display:flex; flex-direction:column; gap:14px;">
+                        <div id="facilityDetailContent" class="detail-card">
+                            <div style="text-align:center; padding:30px 16px; color:#94a3b8; font-size:13px; line-height:1.6;">
+                                <i class="fa-solid fa-hand-pointer" style="font-size:24px; color:#3B82F6; margin-bottom:10px; display:block;"></i>
+                                지도에서 <b>관로, 밸브, 가압장 등 시설물</b>을 클릭하거나<br>
+                                <kbd>Ctrl</kbd> + <kbd>F</kbd> 검색으로 선택 시<br>
+                                <b>해당 시설물 속성 및 대장 DB</b>가 표출됩니다.
+                            </div>
+                        </div>
+
+                        <!-- [세번째 빈칸 위치] 360° 로드뷰 결과창 뷰어 (상단 로드뷰 버튼 클릭 시 이 위치에 즉시 표출) -->
+                        <div id="roadviewDockPane" class="roadview-dock-pane" style="display:none; border-radius:10px; overflow:hidden; border:1px solid #CBD5E1; box-shadow:0 4px 14px rgba(0,0,0,0.06);">
+                            <div class="rv-dock-header">
+                                <!-- 카카오 vs 네이버 전환 탭 -->
+                                <div class="rv-dock-tabs" id="rvDockTabGroup">
+                                    <button type="button" class="rv-dock-tab active" id="btnRvDockTabKakao">
+                                        <i class="fa-solid fa-street-view" style="color:#F59E0B;"></i> 카카오 로드뷰
+                                    </button>
+                                    <button type="button" class="rv-dock-tab" id="btnRvDockTabNaver">
+                                        <i class="fa-solid fa-road" style="color:#10B981;"></i> 네이버 거리뷰
+                                    </button>
+                                </div>
+                                <div class="rv-dock-actions">
+                                    <button type="button" class="btn-rv-dock-action btn-rv-pipe-btn" id="btnRvDockTogglePipe" title="도로 지하 상수관망 AR 투영도 ON/OFF">
+                                        <i class="fa-solid fa-water"></i> 관로표현
+                                    </button>
+                                    <button type="button" class="btn-rv-dock-action" id="btnRvDockOpenNewTab" title="새 탭으로 크게 보기">
+                                        <i class="fa-solid fa-arrow-up-right-from-square"></i>
+                                    </button>
+                                    <button type="button" class="btn-rv-dock-action btn-rv-dock-close" id="btnRvDockClose" title="로드뷰 닫기">
+                                        <i class="fa-solid fa-xmark"></i>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- 주소 및 GPS 좌표 정보 -->
+                            <div class="rv-dock-info-bar">
+                                <div class="rv-dock-info-item">
+                                    <span class="rv-dock-label"><i class="fa-solid fa-road" style="color:#3B82F6;"></i> 도로명:</span>
+                                    <span class="rv-dock-val" id="rvDockRoadAddr">-</span>
+                                </div>
+                                <div class="rv-dock-info-item">
+                                    <span class="rv-dock-label"><i class="fa-regular fa-map" style="color:#64748B;"></i> 지번:</span>
+                                    <span class="rv-dock-val" id="rvDockParcelAddr">-</span>
+                                </div>
+                                <div class="rv-dock-info-item">
+                                    <span class="rv-dock-label"><i class="fa-solid fa-crosshairs" style="color:#10B981;"></i> GPS:</span>
+                                    <span class="rv-dock-val" id="rvDockCoord">-</span>
+                                </div>
+                            </div>
+
+                            <!-- 도킹 로드뷰 실시간 뷰어 프레임 -->
+                            <div class="rv-dock-viewer-container" id="rvDockViewerContainer" style="height:320px;">
+                                <!-- 카카오 네이티브 Roadview 컨테이너 (JS SDK 지원 시 사용) -->
+                                <div id="rvNativeRoadview" class="rv-native-roadview" style="width:100%; height:100%; display:none;"></div>
+                                <iframe id="rvDockIframeKakao" class="rv-dock-frame" src="" frameborder="0" allowfullscreen allow="geolocation"></iframe>
+                                <iframe id="rvDockIframeNaver" class="rv-dock-frame" src="" frameborder="0" allowfullscreen allow="geolocation" style="display:none;"></iframe>
+
+                                <!-- 도킹용 AR 지하 관로 오버레이 -->
+                                <div class="roadview-pipe-overlay" id="rvDockPipeOverlay" style="display:none;">
+                                    <svg class="rv-pipe-svg" viewBox="0 0 800 500" preserveAspectRatio="none">
+                                        <defs>
+                                            <linearGradient id="rvmTrenchGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+                                                <stop offset="0%" stop-color="#0284c7" stop-opacity="0.10"/>
+                                                <stop offset="100%" stop-color="#0369a1" stop-opacity="0.45"/>
+                                            </linearGradient>
+                                            <linearGradient id="rvdPipeGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                                                <stop offset="0%" stop-color="#38bdf8"/>
+                                                <stop offset="50%" stop-color="#0284c7"/>
+                                                <stop offset="100%" stop-color="#0369a1"/>
+                                            </linearGradient>
+                                            <linearGradient id="rvmBranchGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                                                <stop offset="0%" stop-color="#10b981"/>
+                                                <stop offset="100%" stop-color="#059669"/>
+                                            </linearGradient>
+                                            <filter id="rvdPipeGlow" x="-20%" y="-20%" width="140%" height="140%">
+                                                <feGaussianBlur stdDeviation="5" result="blur"/>
+                                                <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+                                            </filter>
+                                        </defs>
+                                        <polygon points="310,500 480,500 445,240 405,240" fill="url(#rvmTrenchGrad)" stroke="#38bdf8" stroke-dasharray="6,4" stroke-opacity="0.6"/>
+                                        <path d="M 395 500 Q 420 370 425 240" stroke="#0ea5e9" stroke-width="24" stroke-linecap="round" fill="none" opacity="0.3" filter="url(#rvdPipeGlow)"/>
+                                        <path d="M 395 500 Q 420 370 425 240" stroke="url(#rvdPipeGrad)" stroke-width="15" stroke-linecap="round" fill="none"/>
+                                        <path class="pipe-flow-dash" d="M 395 500 Q 420 370 425 240" stroke="#ffffff" stroke-width="4" stroke-linecap="round" stroke-dasharray="14 10" fill="none"/>
+                                        <ellipse cx="415" cy="330" rx="26" ry="11" fill="rgba(245, 158, 11, 0.3)" stroke="#f59e0b" stroke-width="2.5"/>
+                                        <ellipse cx="415" cy="330" rx="14" ry="5" fill="#f59e0b" opacity="0.8"/>
+                                        <line x1="415" y1="330" x2="415" y2="385" stroke="#f59e0b" stroke-width="2" stroke-dasharray="4,3"/>
+                                        <circle cx="415" cy="385" r="8" fill="#f59e0b" stroke="#ffffff" stroke-width="2"/>
+                                        <path d="M 415 410 Q 510 425 610 440" stroke="url(#rvmBranchGrad)" stroke-width="6" stroke-linecap="round" fill="none"/>
+                                        <circle cx="610" cy="440" r="6" fill="#10b981" stroke="#ffffff" stroke-width="2"/>
+                                    </svg>
+                                    <!-- 도킹용 콤팩트 HUD 뱃지 -->
+                                    <div class="ar-dock-hud">
+                                        <span class="ar-dock-hud-title"><i class="fa-solid fa-water" style="color:#38BDF8;"></i> 상수관로 AR 투영</span>
+                                        <span class="ar-dock-hud-spec" id="rvDockArPipeSpec">D200 주철관(DIP) | 심도 GL -1.25m | 2.42 kgf/cm²</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 로드뷰 높이 조절 스플리터 드래그 바 -->
+                            <div class="rv-split-resizer" id="rvSplitResizer" title="상하로 드래그하여 로드뷰 창 크기를 조절할 수 있습니다 (더블클릭 시 기본 크기 토글)" style="display:flex;">
+                                <div class="rv-resizer-grip">
+                                    <i class="fa-solid fa-grip-lines"></i>
+                                    <span>크기 조절 (위아래 드래그)</span>
+                                </div>
+                            </div>
+
+                            <!-- 현장 로드뷰 연동 가이드 및 지도 맞춤 바 -->
+                            <div class="rv-dock-nav-bar" id="rvDockNavBar">
+                                <div class="rv-dock-nav-hint" style="margin:0; padding:6px 12px; display:flex; justify-content:space-between; align-items:center; width:100%;">
+                                    <span><i class="fa-solid fa-circle-info" style="color:#0284C7;"></i> 좌측 지도의 <strong>도로를 클릭</strong>하거나 <strong>로드뷰 마커</strong>를 드래그하면 위치가 전환됩니다.</span>
+                                    <button type="button" class="btn-rv-nav-sm btn-rv-nav-sync" id="btnRvDockSyncMap" title="좌측 지도를 현재 로드뷰 위치 중심으로 맞춤" style="padding:4px 9px; font-size:11px; white-space:nowrap; margin-left:8px;">
+                                        <i class="fa-solid fa-crosshairs"></i> 지도 맞춤
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="survey-section" id="surveySectionForm" style="display:none;">
+                            <div class="section-title">
+                                <i class="fa-solid fa-pen" style="color:var(--accent);"></i>
+                                <span id="surveySectionTitle">현장 점검 입력</span>
+                            </div>
+
+                            <div class="form-group">
+                                <label class="form-label">조사자 성명</label>
+                                <input type="text" id="inputSurveyor" class="form-input" value="김해조사원">
+                            </div>
+
+                            <div id="dynamicSurveyFields"></div>
+
+                            <div class="form-group">
+                                <label class="form-label">현장 특이사항 / 메모</label>
+                                <input type="text" id="inputSurveyMemo" class="form-input" placeholder="특이사항 메모 (선택사항)">
+                            </div>
+
+                            <div class="photo-uploader-box">
+                                <div style="display:flex; justify-content:space-between; align-items:center;">
+                                    <span class="form-label"><i class="fa-solid fa-camera"></i> 현장 사진 (초경량 자동압축)</span>
+                                    <div class="photo-mode-selector">
+                                        <label><input type="radio" name="photoQualityMode" value="normal" checked> 일반</label>
+                                        <label><input type="radio" name="photoQualityMode" value="highQuality"> 고화질</label>
+                                    </div>
+                                </div>
+                                <button type="button" id="btnCaptureCamera" class="btn-photo-action"><i class="fa-solid fa-camera"></i> 사진 촬영 / 파일 첨부</button>
+                                <input type="file" id="photoFileInput" accept="image/*" capture="environment" multiple style="display:none;">
+                                <div id="photoProgressText" style="display:none; font-size:11px; color:var(--primary); font-weight:600; text-align:center;"></div>
+                                <div id="photoThumbGrid" class="thumb-grid"></div>
+                            </div>
+
+                            <button type="button" id="btnSaveSurvey" class="btn-save-survey"><i class="fa-solid fa-check"></i> 현장조사 완료 (기기 즉시 저장)</button>
+                        </div>
+                    </div>
+
+                    <div id="searchTab" class="tab-content-pane" style="display:none; flex-direction:column; gap:12px;">
+                        <div class="search-box-wrap">
+                            <i class="fa-solid fa-magnifying-glass search-icon"></i>
+                            <input type="text" id="inputFacilitySearch" class="search-input" placeholder="관리번호, 수용가명, 도로명 검색...">
+                        </div>
+                        <div id="facilityListContainer" class="facility-list"></div>
+                    </div>
+
+                    <div id="historyTab" class="tab-content-pane" style="display:none; flex-direction:column; gap:10px;">
+                        <div style="font-size:12px; color:#64748b; padding-bottom:6px; border-bottom:1px solid var(--border);">
+                            기기에 안전하게 보존 중인 조사 내역 목록입니다.
+                        </div>
+                        <div id="historyListContainer" class="facility-list"></div>
+                    </div>
+                </div>
+            </aside>
+        </div>
+    </div>
+
+    <!-- ============================================================= -->
+    <!-- 뷰 4: [4. 불용관관리] 메인 뷰 섹션                               -->
+    <!-- ============================================================= -->
+    <div id="unusedPipeViewContainer" class="main-viewport-container" style="display:none;">
+        <div class="module-view-wrapper">
+            <div class="dashboard-header-bar">
+                <div class="dash-title-group">
+                    <h2 class="dash-main-title">
+                        <i class="fa-solid fa-link-slash" style="color:#EF4444;"></i> 4. 김해시 불용관 관리 시스템
+                    </h2>
+                    <span class="dash-sub-desc">미사용·폐쇄 관로 현황 추적, 퇴수/오염 위험 차단 및 폐선 철거·매몰 정비 대장 관리</span>
+                </div>
+                <div class="dash-header-actions">
+                    <button class="btn-dash-action" onclick="switchMainView('TOPOLOGY')">
+                        <i class="fa-solid fa-diagram-project"></i> 1. 계통도로 돌아가기
+                    </button>
+                    <button class="btn-dash-action" onclick="switchMainView('MAP')">
+                        <i class="fa-solid fa-map-location-dot"></i> 3. 공종관리(GIS) 연계
+                    </button>
+                </div>
+            </div>
+
+            <div class="module-content-pane">
+                <div class="module-status-banner">
+                    <div class="msb-left">
+                        <span class="msb-badge badge-unused"><i class="fa-solid fa-compass-drafting"></i> 단계별 구축 예정</span>
+                        <div class="msb-text">
+                            <strong>4. 불용관 관리 시스템 워크스페이스</strong>
+                            <span>요청하신 불용관 관리 화면을 하나씩 완성해 나갈 수 있도록 준비된 전용 작업 공간입니다.</span>
+                        </div>
+                    </div>
+                    <div class="msb-right">
+                        <span class="msb-tag"><i class="fa-solid fa-code"></i> 화면 설계 준비 완료</span>
+                    </div>
+                </div>
+
+                <div class="blueprint-grid">
+                    <div class="blueprint-card">
+                        <div class="bc-header">
+                            <div class="bc-icon" style="background: rgba(239, 68, 68, 0.1); color: #EF4444;"><i class="fa-solid fa-table-list"></i></div>
+                            <div class="bc-title-wrap">
+                                <h4>불용관 현황 및 폐선 대장</h4>
+                                <span>관경·관종·매설연도별 미사용 관로 목록</span>
+                            </div>
+                        </div>
+                        <ul class="bc-points">
+                            <li>소블록별 미사용 불용관 총연장(m) 및 위치 통계</li>
+                            <li>단수 폐쇄 일자, 폐관 사유(노선변경/노후) 기록</li>
+                            <li>수용가 급수 분기 차단 여부 및 엑셀 대장 관리</li>
+                        </ul>
+                        <div class="bc-status"><span class="bc-badge">개발 예정 1단계</span></div>
+                    </div>
+
+                    <div class="blueprint-card">
+                        <div class="bc-header">
+                            <div class="bc-icon" style="background: rgba(245, 158, 11, 0.1); color: #F59E0B;"><i class="fa-solid fa-faucet-drip"></i></div>
+                            <div class="bc-title-wrap">
+                                <h4>폐쇄 밸브 및 차단 상태 추적</h4>
+                                <span>경계 제수변 차단 상태 및 퇴수 밸브 모니터링</span>
+                            </div>
+                        </div>
+                        <ul class="bc-points">
+                            <li>불용관 시점/종점 제수변 완전 폐쇄 확인</li>
+                            <li>퇴수변 잔류수 배제 및 관내 정체수 오염 방지</li>
+                            <li>오접합·무단 취수 방지를 위한 봉인 현황 관리</li>
+                        </ul>
+                        <div class="bc-status"><span class="bc-badge">개발 예정 2단계</span></div>
+                    </div>
+
+                    <div class="blueprint-card">
+                        <div class="bc-header">
+                            <div class="bc-icon" style="background: rgba(59, 130, 246, 0.1); color: #3B82F6;"><i class="fa-solid fa-map-location"></i></div>
+                            <div class="bc-title-wrap">
+                                <h4>GIS 관망도 불용관 오버레이</h4>
+                                <span>공간정보 기반 실관로 vs 불용관 구분 표출</span>
+                            </div>
+                        </div>
+                        <ul class="bc-points">
+                            <li>VWorld 배경지도 위 불용관로 점선/회색 레이어 표시</li>
+                            <li>주변 활선 배수관 및 경계 제수변 위치 동시 비교</li>
+                            <li>GIS SHP 레이어 연계 및 지리적 위험 구간 식별</li>
+                        </ul>
+                        <div class="bc-status"><span class="bc-badge">개발 예정 3단계</span></div>
+                    </div>
+
+                    <div class="blueprint-card">
+                        <div class="bc-header">
+                            <div class="bc-icon" style="background: rgba(16, 185, 129, 0.1); color: #10B981;"><i class="fa-solid fa-person-digging"></i></div>
+                            <div class="bc-title-wrap">
+                                <h4>철거 및 매몰 정비 이력</h4>
+                                <span>현장 굴착 철거/매몰 완료 대장 및 사진</span>
+                            </div>
+                        </div>
+                        <ul class="bc-points">
+                            <li>불용관 철거 공사 및 아스콘 복구 완료 일자</li>
+                            <li>현장 조치 전/중/후 고화질 사진 등록 관리</li>
+                            <li>공사 업체, 공사 금액 및 최종 폐관 확인서 발급</li>
+                        </ul>
+                        <div class="bc-status"><span class="bc-badge">개발 예정 4단계</span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================================= -->
+    <!-- 뷰 5: [5. 노후관선별] 메인 뷰 섹션                               -->
+    <!-- ============================================================= -->
+    <div id="agingPipeViewContainer" class="main-viewport-container" style="display:none;">
+        <div class="module-view-wrapper">
+            <div class="dashboard-header-bar">
+                <div class="dash-title-group">
+                    <h2 class="dash-main-title">
+                        <i class="fa-solid fa-clock-rotate-left" style="color:#F59E0B;"></i> 5. 김해시 노후관 선별 및 개체 평가
+                    </h2>
+                    <span class="dash-sub-desc">매설연수(내구연한), 누수 빈발 이력, 관종/관경을 종합한 개체 우선순위 평가 및 사업 계획</span>
+                </div>
+                <div class="dash-header-actions">
+                    <button class="btn-dash-action" onclick="switchMainView('TOPOLOGY')">
+                        <i class="fa-solid fa-diagram-project"></i> 1. 계통도로 돌아가기
+                    </button>
+                    <button class="btn-dash-action" onclick="switchMainView('MAP')">
+                        <i class="fa-solid fa-map-location-dot"></i> 3. 공종관리(GIS) 연계
+                    </button>
+                </div>
+            </div>
+
+            <div class="module-content-pane">
+                <div class="module-status-banner">
+                    <div class="msb-left">
+                        <span class="msb-badge badge-aging"><i class="fa-solid fa-compass-drafting"></i> 단계별 구축 예정</span>
+                        <div class="msb-text">
+                            <strong>5. 노후관선별 시스템 워크스페이스</strong>
+                            <span>내구연한 경과 관로와 누수 취약 구간을 선별하기 위한 단계별 분석 화면 영역입니다.</span>
+                        </div>
+                    </div>
+                    <div class="msb-right">
+                        <span class="msb-tag"><i class="fa-solid fa-code"></i> 화면 설계 준비 완료</span>
+                    </div>
+                </div>
+
+                <div class="blueprint-grid">
+                    <div class="blueprint-card">
+                        <div class="bc-header">
+                            <div class="bc-icon" style="background: rgba(245, 158, 11, 0.1); color: #F59E0B;"><i class="fa-solid fa-hourglass-end"></i></div>
+                            <div class="bc-title-wrap">
+                                <h4>내구연한 초과 관로 자동 선별</h4>
+                                <span>20년 / 30년 경과 노후 주철관·강관 필터</span>
+                            </div>
+                        </div>
+                        <ul class="bc-points">
+                            <li>매설연도 기준 경과연수 자동 산정 및 초과 구간 추출</li>
+                            <li>부식성 관종(CIP, ACP, 구형 강관) 집중 선별</li>
+                            <li>블록별 총 매설연장 대비 노후관 비율(%) 순위 집계</li>
+                        </ul>
+                        <div class="bc-status"><span class="bc-badge">개발 예정 1단계</span></div>
+                    </div>
+
+                    <div class="blueprint-card">
+                        <div class="bc-header">
+                            <div class="bc-icon" style="background: rgba(239, 68, 68, 0.1); color: #EF4444;"><i class="fa-solid fa-triangle-exclamation"></i></div>
+                            <div class="bc-title-wrap">
+                                <h4>누수 사고 빈발 구간 매칭</h4>
+                                <span>공종관리 누수 수리 이력 결합 분석</span>
+                            </div>
+                        </div>
+                        <ul class="bc-points">
+                            <li>최근 1~3년간 반복 누수 발생 구간 공간 클러스터링</li>
+                            <li>지반 침하 위험 지역 및 도로 하중 집중 구간 연계</li>
+                            <li>누수 복구 비용 대비 관로 개체 경제성 지수 산출</li>
+                        </ul>
+                        <div class="bc-status"><span class="bc-badge">개발 예정 2단계</span></div>
+                    </div>
+
+                    <div class="blueprint-card">
+                        <div class="bc-header">
+                            <div class="bc-icon" style="background: rgba(139, 92, 246, 0.1); color: #8B5CF6;"><i class="fa-solid fa-ranking-star"></i></div>
+                            <div class="bc-title-wrap">
+                                <h4>개체 우선순위 등급 평가 (A~E)</h4>
+                                <span>종합 위험도 지수(Risk Index) 산정 모델</span>
+                            </div>
+                        </div>
+                        <ul class="bc-points">
+                            <li>관령(40%) + 누수이력(30%) + 수압/단수영향(30%) 평가</li>
+                            <li>긴급 교체(A등급) ~ 장기 관찰(E등급) 등급 분류</li>
+                            <li>연차별 노후관망 현대화 정비사업 예산 산출 기초자료</li>
+                        </ul>
+                        <div class="bc-status"><span class="bc-badge">개발 예정 3단계</span></div>
+                    </div>
+
+                    <div class="blueprint-card">
+                        <div class="bc-header">
+                            <div class="bc-icon" style="background: rgba(16, 185, 129, 0.1); color: #10B981;"><i class="fa-solid fa-file-invoice-dollar"></i></div>
+                            <div class="bc-title-wrap">
+                                <h4>관망 개량 사업비 추정 및 대장</h4>
+                                <span>관경별 단가 적용 개체 공사비 산출</span>
+                            </div>
+                        </div>
+                        <ul class="bc-points">
+                            <li>관경별(D50~D300) m당 표준 품셈 개량 공사비 산출</li>
+                            <li>정비 대상 노선별 세부 제원 조서 엑셀 내보내기</li>
+                            <li>환경부 노후상수관망 정비 사업계획서 서식 출력</li>
+                        </ul>
+                        <div class="bc-status"><span class="bc-badge">개발 예정 4단계</span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================================= -->
+    <!-- 뷰 6: [6. 블록현황도] 메인 뷰 섹션                               -->
+    <!-- ============================================================= -->
+    <div id="blockMapViewContainer" class="main-viewport-container" style="display:none;">
+        <div class="module-view-wrapper">
+            <div class="dashboard-header-bar">
+                <div class="dash-title-group">
+                    <h2 class="dash-main-title">
+                        <i class="fa-solid fa-cubes" style="color:#0284C7;"></i> 6. 김해시 블록 현황도 및 급수계통 관제
+                    </h2>
+                    <span class="dash-sub-desc">58개 소블록 공간 경계, 유입/분기 유량계 및 배수지별 공급망 종합도</span>
+                </div>
+                <div class="dash-header-actions">
+                    <button class="btn-dash-action" onclick="switchMainView('TOPOLOGY')">
+                        <i class="fa-solid fa-diagram-project"></i> 1. 계통도로 돌아가기
+                    </button>
+                    <button class="btn-dash-action" onclick="switchMainView('DASHBOARD')">
+                        <i class="fa-solid fa-chart-pie"></i> 2. 유수율분석 연계
+                    </button>
+                </div>
+            </div>
+
+            <div class="module-content-pane">
+                <div class="module-status-banner">
+                    <div class="msb-left">
+                        <span class="msb-badge badge-blockmap"><i class="fa-solid fa-compass-drafting"></i> 단계별 구축 예정</span>
+                        <div class="msb-text">
+                            <strong>6. 블록 현황도 시스템 워크스페이스</strong>
+                            <span>김해시 58개 소블록의 공간적 배치와 수리 계통을 종합 관리할 전용 도면 작업 공간입니다.</span>
+                        </div>
+                    </div>
+                    <div class="msb-right">
+                        <span class="msb-tag"><i class="fa-solid fa-code"></i> 화면 설계 준비 완료</span>
+                    </div>
+                </div>
+
+                <div class="blueprint-grid">
+                    <div class="blueprint-card">
+                        <div class="bc-header">
+                            <div class="bc-icon" style="background: rgba(2, 132, 199, 0.1); color: #0284C7;"><i class="fa-solid fa-draw-polygon"></i></div>
+                            <div class="bc-title-wrap">
+                                <h4>58개 소블록 경계 공간도</h4>
+                                <span>블록 경계선 및 유입·유출 계량 지점 매핑</span>
+                            </div>
+                        </div>
+                        <ul class="bc-points">
+                            <li>VWorld 지도 기반 소블록 폴리곤 레이어 공간 표출</li>
+                            <li>유입 유량계(주요 지점) 및 블록간 연계 밸브 표시</li>
+                            <li>블록 클릭 시 즉시 해당 블록 상세 제원 팝업 표출</li>
+                        </ul>
+                        <div class="bc-status"><span class="bc-badge">개발 예정 1단계</span></div>
+                    </div>
+
+                    <div class="blueprint-card">
+                        <div class="bc-header">
+                            <div class="bc-icon" style="background: rgba(16, 185, 129, 0.1); color: #10B981;"><i class="fa-solid fa-water"></i></div>
+                            <div class="bc-title-wrap">
+                                <h4>배수지 계통별 급수구역 오버레이</h4>
+                                <span>명동정수장 / 삼계정수장 계통 공급 구역도</span>
+                            </div>
+                        </div>
+                        <ul class="bc-points">
+                            <li>명동·삼계 배수지별 담당 소블록 그룹핑 시각화</li>
+                            <li>가압장 관할 고지대 구역 및 감압변 관할 구역 표시</li>
+                            <li>비상 연계 공급 관로 및 바이패스 라인 도면 표출</li>
+                        </ul>
+                        <div class="bc-status"><span class="bc-badge">개발 예정 2단계</span></div>
+                    </div>
+
+                    <div class="blueprint-card">
+                        <div class="bc-header">
+                            <div class="bc-icon" style="background: rgba(139, 92, 246, 0.1); color: #8B5CF6;"><i class="fa-solid fa-gauge"></i></div>
+                            <div class="bc-title-wrap">
+                                <h4>블록별 실시간 상태 카드</h4>
+                                <span>공급량, 유수율, 압력, 누수 현황 종합 관제</span>
+                            </div>
+                        </div>
+                        <ul class="bc-points">
+                            <li>블록별 일일 유입량, 야간최소유량(MNF), 평균수압 카드</li>
+                            <li>유수율 등급(목표 달성/미달성) 색상별 블록 시각화</li>
+                            <li>최근 현장 점검일 및 미조치 누수 건수 실시간 연동</li>
+                        </ul>
+                        <div class="bc-status"><span class="bc-badge">개발 예정 3단계</span></div>
+                    </div>
+
+                    <div class="blueprint-card">
+                        <div class="bc-header">
+                            <div class="bc-icon" style="background: rgba(245, 158, 11, 0.1); color: #F59E0B;"><i class="fa-solid fa-file-pdf"></i></div>
+                            <div class="bc-title-wrap">
+                                <h4>블록현황도 출력 및 도면 내보내기</h4>
+                                <span>고해상도 PDF 도면 및 GIS 레이어 다운로드</span>
+                            </div>
+                        </div>
+                        <ul class="bc-points">
+                            <li>A3/A4 출력용 블록별 상수관망 종합도 PDF 생성</li>
+                            <li>도면 범례, 방위표, 축척 자동 배치 기능</li>
+                            <li>현장 지참용 오프라인 도면 출력 및 백업 지원</li>
+                        </ul>
+                        <div class="bc-status"><span class="bc-badge">개발 예정 4단계</span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================================= -->
+    <!-- 뷰 7: [7. 일정표] 메인 뷰 섹션                                   -->
+    <!-- ============================================================= -->
+    <div id="scheduleViewContainer" class="main-viewport-container" style="display:none;">
+        <div class="module-view-wrapper">
+            <div class="dashboard-header-bar">
+                <div class="dash-title-group">
+                    <h2 class="dash-main-title">
+                        <i class="fa-regular fa-calendar-days" style="color:#8B5CF6;"></i> 7. 김해시 관망 관리 현장 작업 일정표
+                    </h2>
+                    <span class="dash-sub-desc">블록별 누수탐사, 경계밸브 점검, 수압측정, 계량기 검침 및 정비 공사 통합 캘린더</span>
+                </div>
+                <div class="dash-header-actions">
+                    <button class="btn-dash-action" onclick="switchMainView('TOPOLOGY')">
+                        <i class="fa-solid fa-diagram-project"></i> 1. 계통도로 돌아가기
+                    </button>
+                    <button class="btn-dash-action" onclick="switchMainView('MAP')">
+                        <i class="fa-solid fa-map-location-dot"></i> 3. 공종관리(GIS) 연계
+                    </button>
+                </div>
+            </div>
+
+            <div class="module-content-pane">
+                <div class="module-status-banner">
+                    <div class="msb-left">
+                        <span class="msb-badge badge-schedule"><i class="fa-solid fa-compass-drafting"></i> 단계별 구축 예정</span>
+                        <div class="msb-text">
+                            <strong>7. 현장 작업 일정표 워크스페이스</strong>
+                            <span>관망 조사 일정 및 보수 공사 일정을 체계적으로 수립하고 모니터링할 통합 캘린더 공간입니다.</span>
+                        </div>
+                    </div>
+                    <div class="msb-right">
+                        <span class="msb-tag"><i class="fa-solid fa-code"></i> 화면 설계 준비 완료</span>
+                    </div>
+                </div>
+
+                <div class="blueprint-grid">
+                    <div class="blueprint-card">
+                        <div class="bc-header">
+                            <div class="bc-icon" style="background: rgba(139, 92, 246, 0.1); color: #8B5CF6;"><i class="fa-solid fa-calendar-week"></i></div>
+                            <div class="bc-title-wrap">
+                                <h4>공종별 통합 현장 캘린더</h4>
+                                <span>월간·주간·일간 단위 관망 점검 스케줄</span>
+                            </div>
+                        </div>
+                        <ul class="bc-points">
+                            <li>제수변, 수압, 누수탐사, 계량기 공종별 색상 태그</li>
+                            <li>캘린더 날짜 클릭 시 해당 일자 조사 대상 목록 조회</li>
+                            <li>드래그 앤 드롭 일정 변경 및 작업 담당자 배정</li>
+                        </ul>
+                        <div class="bc-status"><span class="bc-badge">개발 예정 1단계</span></div>
+                    </div>
+
+                    <div class="blueprint-card">
+                        <div class="bc-header">
+                            <div class="bc-icon" style="background: rgba(59, 130, 246, 0.1); color: #3B82F6;"><i class="fa-solid fa-rotate"></i></div>
+                            <div class="bc-title-wrap">
+                                <h4>블록별 순회 점검 주기 관리</h4>
+                                <span>정기 점검 도래 블록 자동 알림</span>
+                            </div>
+                        </div>
+                        <ul class="bc-points">
+                            <li>소블록별 최근 점검 완료일자 추적 (분기별/반기별)</li>
+                            <li>점검 주기 초과 미점검 블록 주의 알림 뱃지 표출</li>
+                            <li>블록 우선순위 기반 추천 점검 순서 자동 제안</li>
+                        </ul>
+                        <div class="bc-status"><span class="bc-badge">개발 예정 2단계</span></div>
+                    </div>
+
+                    <div class="blueprint-card">
+                        <div class="bc-header">
+                            <div class="bc-icon" style="background: rgba(239, 68, 68, 0.1); color: #EF4444;"><i class="fa-solid fa-bullhorn"></i></div>
+                            <div class="bc-title-wrap">
+                                <h4>단수 및 관세척 작업 사전 공지</h4>
+                                <span>구역 단수 일정 및 주민 사전 안내 관리</span>
+                            </div>
+                        </div>
+                        <ul class="bc-points">
+                            <li>단수 예정 일시, 수혜 구역 및 영향 수용가 집계</li>
+                            <li>소화전 방류 세척 및 탁수 발생 우려 지역 공지</li>
+                            <li>비상 급수차 배치 및 생수 지원 계획 연계</li>
+                        </ul>
+                        <div class="bc-status"><span class="bc-badge">개발 예정 3단계</span></div>
+                    </div>
+
+                    <div class="blueprint-card">
+                        <div class="bc-header">
+                            <div class="bc-icon" style="background: rgba(16, 185, 129, 0.1); color: #10B981;"><i class="fa-solid fa-chart-line"></i></div>
+                            <div class="bc-title-wrap">
+                                <h4>작업 달성률 및 실적 통계</h4>
+                                <span>계획 대비 완료 실적 및 주간 보고서</span>
+                            </div>
+                        </div>
+                        <ul class="bc-points">
+                            <li>조사원별, 공종별 현장 조사 건수 및 완료율 모니터링</li>
+                            <li>이상 밸브 조치율 및 누수 복구 완료율 통계</li>
+                            <li>주간/월간 관망 유지관리 실적 보고서 자동 생성</li>
+                        </ul>
+                        <div class="bc-status"><span class="bc-badge">개발 예정 4단계</span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================================= -->
+    <!-- 뷰 8: [8. 관리자모드] 메인 뷰 섹션                               -->
+    <!-- ============================================================= -->
+    <div id="adminModeViewContainer" class="main-viewport-container" style="display:none;">
+        <div class="module-view-wrapper">
+            <div class="dashboard-header-bar">
+                <div class="dash-title-group">
+                    <h2 class="dash-main-title">
+                        <i class="fa-solid fa-user-shield" style="color:#10B981;"></i> 8. 김해시 관망관리 통합 관리자 모드
+                    </h2>
+                    <span class="dash-sub-desc">시스템 권한, 기초 데이터 동기화, 백업 및 관망 진단 파라미터 환경 설정</span>
+                </div>
+                <div class="dash-header-actions">
+                    <button class="btn-dash-action" onclick="switchMainView('TOPOLOGY')">
+                        <i class="fa-solid fa-diagram-project"></i> 1. 계통도로 돌아가기
+                    </button>
+                    <button class="btn-dash-action" id="btnAdminLaunchBaseData">
+                        <i class="fa-solid fa-cloud-arrow-up"></i> 기초자료 배포 센터 열기
+                    </button>
+                    <button class="btn-dash-action" id="btnAdminExportBackup">
+                        <i class="fa-solid fa-floppy-disk"></i> NAS 백업 다운로드
+                    </button>
+                </div>
+            </div>
+
+            <div class="module-content-pane">
+                <div class="module-status-banner">
+                    <div class="msb-left">
+                        <span class="msb-badge badge-admin"><i class="fa-solid fa-compass-drafting"></i> 단계별 구축 예정</span>
+                        <div class="msb-text">
+                            <strong>8. 시스템 통합 관리자 모드 워크스페이스</strong>
+                            <span>기초자료 관리, 사용자 권한 및 데이터 백업을 한곳에서 중앙 제어할 수 있는 관리자 화면입니다.</span>
+                        </div>
+                    </div>
+                    <div class="msb-right">
+                        <span class="msb-tag"><i class="fa-solid fa-code"></i> 화면 설계 준비 완료</span>
+                    </div>
+                </div>
+
+                <div class="blueprint-grid">
+                    <div class="blueprint-card">
+                        <div class="bc-header">
+                            <div class="bc-icon" style="background: rgba(16, 185, 129, 0.1); color: #10B981;"><i class="fa-solid fa-cloud-arrow-up"></i></div>
+                            <div class="bc-title-wrap">
+                                <h4>기초자료 통합 배포 센터</h4>
+                                <span>엑셀(공급량/부과량/누수/목표치) 및 GIS SHP 배포</span>
+                            </div>
+                        </div>
+                        <ul class="bc-points">
+                            <li>일자별 공급량 및 월별 수용가 부과량 원클릭 갱신</li>
+                            <li>SHP 관망도 공간 데이터 최신화 및 배포 관리</li>
+                            <li>원클릭 로컬/클라우드 배포 상태 실시간 모니터링</li>
+                        </ul>
+                        <div class="bc-status">
+                            <button type="button" class="btn-bc-link" onclick="document.getElementById('baseDataModal').style.display='flex'">
+                                <i class="fa-solid fa-cloud-arrow-up"></i> 기초자료 배포 센터 열기
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="blueprint-card">
+                        <div class="bc-header">
+                            <div class="bc-icon" style="background: rgba(59, 130, 246, 0.1); color: #3B82F6;"><i class="fa-solid fa-users-gear"></i></div>
+                            <div class="bc-title-wrap">
+                                <h4>사용자 계정 및 작업 권한 설정</h4>
+                                <span>본청 관리자, 현장 조사원, 용역사 권한 분리</span>
+                            </div>
+                        </div>
+                        <ul class="bc-points">
+                            <li>조사원별 계정 발급 및 권한(조사 전용 / 수정 / 승인)</li>
+                            <li>현장 태블릿 기기 등록 및 오프라인 저장소 사용 승인</li>
+                            <li>비인가 접근 차단 및 계정별 활동 로그(Audit Log)</li>
+                        </ul>
+                        <div class="bc-status"><span class="bc-badge">개발 예정 2단계</span></div>
+                    </div>
+
+                    <div class="blueprint-card">
+                        <div class="bc-header">
+                            <div class="bc-icon" style="background: rgba(245, 158, 11, 0.1); color: #F59E0B;"><i class="fa-solid fa-database"></i></div>
+                            <div class="bc-title-wrap">
+                                <h4>데이터베이스 백업 & 복구</h4>
+                                <span>로컬 / NAS 자동 백업 및 롤백 스냅샷</span>
+                            </div>
+                        </div>
+                        <ul class="bc-points">
+                            <li>시스템 전체 데이터 JSON/SQLite 원클릭 백업</li>
+                            <li>일자별 자동 스냅샷 생성 및 특정 시점 복구(Rollback)</li>
+                            <li>클라우드/NAS 원격 동기화 상태 및 용량 관리</li>
+                        </ul>
+                        <div class="bc-status">
+                            <button type="button" class="btn-bc-link" id="btnCardExportBackup">
+                                <i class="fa-solid fa-floppy-disk"></i> NAS 백업 파일 다운로드
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="blueprint-card">
+                        <div class="bc-header">
+                            <div class="bc-icon" style="background: rgba(139, 92, 246, 0.1); color: #8B5CF6;"><i class="fa-solid fa-sliders"></i></div>
+                            <div class="bc-title-wrap">
+                                <h4>관망 진단 기준 파라미터 관리</h4>
+                                <span>적정구경 기준표, 유수율 목표치, 이상 사용량 임계값</span>
+                            </div>
+                        </div>
+                        <ul class="bc-points">
+                            <li>업종/구경별 적정 일사용량 상하한 기준값 변경</li>
+                            <li>급증/급감 이상 수용가 판정 기준 비율(±50% 등) 설정</li>
+                            <li>김해시 58개 소블록 목표 유수율 기준치 일괄 수정</li>
+                        </ul>
+                        <div class="bc-status"><span class="bc-badge">개발 예정 4단계</span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================================= -->
+    <!-- 뷰 9: [9. 기준 및 근거] 노트북LM 방식 소스 기반 AI 어시스턴트   -->
+    <!-- ============================================================= -->
+    <div id="standardsViewContainer" class="main-viewport-container" style="display:none;">
+        <div class="standards-notebook-layout">
+            <!-- 좌측: 소스 자료 관리 패널 (NotebookLM Sources Panel) -->
+            <aside class="notebook-sources-panel">
+                <div class="sources-panel-header">
+                    <div class="sph-title-row">
+                        <div class="sph-title">
+                            <i class="fa-solid fa-folder-closed" style="color:#0284C7;"></i>
+                            <span>소스 자료 (Sources)</span>
+                        </div>
+                        <span class="sph-count-badge" id="sourceActiveCountBadge">4개 선택됨</span>
+                    </div>
+                    <p class="sph-desc">AI 답변의 근거가 될 공식 기준, 지침, 조례 문서를 등록하고 선택하세요.</p>
+                    <div class="sph-actions">
+                        <button type="button" class="btn-add-source" id="btnOpenAddSourceModal">
+                            <i class="fa-solid fa-plus"></i> 소스 자료 추가
+                        </button>
+                        <button type="button" class="btn-toggle-all-sources" id="btnToggleAllSources" title="전체 선택/해제">
+                            <i class="fa-solid fa-check-double"></i> 전체
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 소스 문서 목록 컨테이너 -->
+                <div class="sources-list-container" id="sourcesListContainer">
+                    <!-- standardsLm.js에서 동적 렌더링 -->
+                </div>
+
+                <!-- 소스 상태 푸터 -->
+                <div class="sources-panel-footer">
+                    <div class="spf-info">
+                        <i class="fa-solid fa-shield-halved" style="color:#10B981;"></i>
+                        <span>엄격한 근거 기반(Grounded AI): 등록된 소스 외의 환각(Hallucination)을 원천 차단합니다.</span>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- 우측: AI 질의응답 및 브리핑 스튜디오 패널 (NotebookLM Chat & Studio) -->
+            <main class="notebook-chat-panel">
+                <!-- 상단 헤더 & 빠른 브리핑 도구 -->
+                <div class="notebook-header-bar">
+                    <div class="nhb-left">
+                        <div class="nhb-title">
+                            <i class="fa-solid fa-book-bookmark" style="color:#2563EB;"></i>
+                            <h2>9. 기준 및 근거 AI 어시스턴트</h2>
+                            <span class="nhb-pill"><i class="fa-solid fa-bolt"></i> 노트북LM 방식</span>
+                        </div>
+                        <span class="nhb-sub">등록된 관망 기준 문서에 명시된 원문 구절만을 근거로 신뢰도 100% 답변을 제공합니다.</span>
+                    </div>
+                    <div class="nhb-actions" style="display:flex; align-items:center; gap:8px;">
+                        <button type="button" class="btn-dash-action" id="btnHeaderSavedNotes" style="background:#FFFBEB; border-color:#FDE68A; color:#B45309; font-weight:700;">
+                            <i class="fa-solid fa-bookmark" style="color:#D97706;"></i> <span>중요 보관함</span> (<span id="headerSavedNotesCount">0</span>)
+                        </button>
+                        <button class="btn-dash-action" onclick="switchMainView('TOPOLOGY')">
+                            <i class="fa-solid fa-diagram-project"></i> 1. 계통도 복귀
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 스튜디오 빠른 실행 툴바 (NotebookLM Studio Buttons) -->
+                <div class="notebook-studio-toolbar">
+                    <span class="nst-label"><i class="fa-solid fa-wand-magic-sparkles"></i> 빠른 분석:</span>
+                    <button type="button" class="btn-studio-tool" id="btnStudioSummary">
+                        <i class="fa-solid fa-file-lines" style="color:#0284C7;"></i> 핵심 요약 브리핑
+                    </button>
+                    <button type="button" class="btn-studio-tool" id="btnStudioFaq">
+                        <i class="fa-solid fa-circle-question" style="color:#10B981;"></i> 자주 찾는 Q&A
+                    </button>
+                    <button type="button" class="btn-studio-tool" id="btnStudioChecklist">
+                        <i class="fa-solid fa-list-check" style="color:#F59E0B;"></i> 현장 점검 체크리스트
+                    </button>
+                    <button type="button" class="btn-studio-tool" id="btnStudioSavedNotes" style="background:#FFFBEB; border-color:#FDE68A; color:#B45309; font-weight:700;">
+                        <i class="fa-solid fa-bookmark" style="color:#D97706;"></i> 중요 보관함 (<span id="studioSavedNotesCount">0</span>)
+                    </button>
+                    <button type="button" class="btn-studio-tool" id="btnClearChatHistory" title="대화 내용 지우기">
+                        <i class="fa-solid fa-rotate-right"></i> 새 대화
+                    </button>
+                </div>
+
+                <!-- 추천 질문 칩 바 -->
+                <div class="notebook-prompt-chips" id="notebookPromptChips">
+                    <span class="npc-label">추천 질의:</span>
+                    <button class="prompt-chip" data-query="야간최소유량(MNF) 산정 공식과 판정 기준이 뭐야?">
+                        💡 MNF 산정 공식 및 판정 기준
+                    </button>
+                    <button class="prompt-chip" data-query="불용관 철거 및 폐쇄 밸브 조치 기준은?">
+                        💡 불용관 폐쇄 및 퇴수 조치 기준
+                    </button>
+                    <button class="prompt-chip" data-query="노후관 선별 시 매설 연수 및 내구연한 기준은?">
+                        💡 노후관 내구연한 및 개체 우선순위
+                    </button>
+                    <button class="prompt-chip" data-query="수용가 계량기 적정 구경 선정 및 축소 기준은?">
+                        💡 수용가 적정 계량기 구경 선정 기준
+                    </button>
+                </div>
+
+                <!-- 채팅 메시지 스크롤 영역 -->
+                <div class="notebook-chat-messages" id="notebookChatMessages">
+                    <!-- 메시지 아이템들 동적 렌더링 -->
+                </div>
+
+                <!-- 하단 질문 입력 바 -->
+                <div class="notebook-chat-input-bar">
+                    <div class="nci-wrapper">
+                        <textarea id="standardsQuestionInput" rows="1" placeholder="선택된 소스 자료를 토대로 궁금한 기준이나 근거를 질문하세요... (Enter 전송, Shift+Enter 줄바꿈)"></textarea>
+                        <button type="button" id="btnSendStandardsQuestion" class="btn-send-question" title="질문 전송">
+                            <i class="fa-solid fa-arrow-up"></i>
+                        </button>
+                    </div>
+                    <div class="nci-helper-text">
+                        <span><i class="fa-solid fa-circle-info"></i> 등록된 소스에 근거가 없는 내용은 답변하지 않으며, 각 답변에는 <strong>[인용 출처]</strong>가 표기됩니다.</span>
+                        <span id="groundingSourceStatus">활성 소스: 4개 문서</span>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+</div>
+
+<!-- ============================================================= -->
+<!-- 관리자 전용: 기초자료 등록 및 클라우드 배포 센터 모달          -->
+<!-- ============================================================= -->
+<div id="baseDataModal" class="modal-backdrop" style="display:none;">
+    <div class="modal-card" style="width: 820px;">
+        <div class="modal-header">
+            <div class="modal-title">
+                <i class="fa-solid fa-cloud-arrow-up" style="color:#2563EB;"></i>
+                <span>기초자료 관리 및 클라우드 중앙 배포 센터</span>
+            </div>
+            <button id="btnCloseBaseModal" class="modal-close-btn">&times;</button>
+        </div>
+
+        <div class="modal-body" style="display:flex; flex-direction:column; gap:16px;">
+            <div style="background:#EFF6FF; border:1px solid #BFDBFE; padding:12px 16px; border-radius:8px; font-size:13px; color:#1E40AF;">
+                <i class="fa-solid fa-circle-info"></i> <strong>대표자 안내:</strong> 
+                엑셀 파일(공급량, 부과량, 누수수리, 목표치)이나 관망도 SHP를 등록한 뒤, 하단의 <strong>[클라우드 최신화 배포]</strong>를 누르면 클라우드 중앙 서버로 즉시 업로드되어 모든 직원의 화면에 자동 반영됩니다.
+            </div>
+
+            <!-- 클라우드 배포 현황 실시간 검증 센터 -->
+            <div id="cloudDeploymentInspector" style="background:#F8FAFC; border:1px solid #CBD5E1; border-radius:10px; padding:14px 16px; display:flex; flex-direction:column; gap:10px; box-shadow:0 2px 8px rgba(0,0,0,0.03);">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <div style="font-size:13.5px; font-weight:800; color:#0F172A; display:flex; align-items:center; gap:7px;">
+                        <i class="fa-solid fa-cloud-arrow-up" style="color:#2563EB;"></i>
+                        <span>클라우드 최종 배포 현황 실시간 검증 센터</span>
+                        <span id="ciStatusBadge" style="background:#DCFCE7; color:#15803D; font-size:11px; padding:2px 8px; border-radius:12px; font-weight:700;">🟢 정상 동기화</span>
+                    </div>
+                    <button type="button" id="btnRefreshCloudInspector" style="background:#FFFFFF; border:1px solid #CBD5E1; border-radius:6px; padding:4px 10px; font-size:11.5px; font-weight:600; color:#475569; cursor:pointer;" title="클라우드 배포 현황 새로고침">
+                        <i class="fa-solid fa-arrows-rotate"></i> 상태 갱신
+                    </button>
+                </div>
+                <div style="display:grid; grid-template-columns: repeat(2, 1fr); gap:8px; font-size:12px;">
+                    <div style="background:#FFFFFF; border:1px solid #E2E8F0; padding:8px 12px; border-radius:6px;">
+                        <span style="color:#64748B; font-weight:600;"><i class="fa-regular fa-clock"></i> 최종 배포 일시:</span>
+                        <div id="ciDeployTime" style="font-weight:700; color:#1E293B; margin-top:2px;">2026-11-14 20:30 (대표자)</div>
+                    </div>
+                    <div style="background:#FFFFFF; border:1px solid #E2E8F0; padding:8px 12px; border-radius:6px;">
+                        <span style="color:#64748B; font-weight:600;"><i class="fa-solid fa-faucet" style="color:#0284c7;"></i> 공급량 등록 현황:</span>
+                        <div id="ciSupplyStatus" style="font-weight:700; color:#0284c7; margin-top:2px;">365일분 (최신 2025.12.31 / 35개 블록)</div>
+                    </div>
+                    <div style="background:#FFFFFF; border:1px solid #E2E8F0; padding:8px 12px; border-radius:6px;">
+                        <span style="color:#64748B; font-weight:600;"><i class="fa-solid fa-receipt" style="color:#10b981;"></i> 부과량 등록 현황:</span>
+                        <div id="ciChargeStatus" style="font-weight:700; color:#10b981; margin-top:2px;">12개월분 (최신 2025.12월 / 14,820,350 m³)</div>
+                    </div>
+                    <div style="background:#FFFFFF; border:1px solid #E2E8F0; padding:8px 12px; border-radius:6px;">
+                        <span style="color:#64748B; font-weight:600;"><i class="fa-solid fa-wrench" style="color:#f59e0b;"></i> 누수 수리 기록:</span>
+                        <div id="ciRepairStatus" style="font-weight:700; color:#d97706; margin-top:2px;">총 148건 (최근 수리일자 실시간 반영)</div>
+                    </div>
+                    <div style="background:#F5F3FF; border:1px solid #DDD6FE; padding:8px 12px; border-radius:6px; grid-column:span 2;">
+                        <span style="color:#7C3AED; font-weight:700;"><i class="fa-solid fa-map-location-dot"></i> 배포된 GIS 관망도 현황:</span>
+                        <div id="ciGisStatus" style="display:flex; flex-wrap:wrap; gap:6px; margin-top:4px;">
+                            <span style="background:white; border:1px solid #C4B5FD; color:#6D28D9; padding:2px 7px; border-radius:4px; font-size:11px; font-weight:600;"><i class="fa-solid fa-lines-leaning"></i> 상수관로 40,256구간 (5,032 표출)</span>
+                            <span style="background:white; border:1px solid #C4B5FD; color:#6D28D9; padding:2px 7px; border-radius:4px; font-size:11px; font-weight:600;"><i class="fa-solid fa-gear"></i> 제수변 31,652개 (2,111 표출)</span>
+                            <span style="background:white; border:1px solid #C4B5FD; color:#6D28D9; padding:2px 7px; border-radius:4px; font-size:11px; font-weight:600;"><i class="fa-solid fa-draw-polygon"></i> 소블록 103개</span>
+                            <span style="background:white; border:1px solid #C4B5FD; color:#6D28D9; padding:2px 7px; border-radius:4px; font-size:11px; font-weight:600;"><i class="fa-solid fa-gauge-high"></i> 유량계 326개</span>
+                            <span style="background:white; border:1px solid #C4B5FD; color:#6D28D9; padding:2px 7px; border-radius:4px; font-size:11px; font-weight:600;"><i class="fa-solid fa-bolt"></i> 가압장 63개소</span>
+                            <span style="background:white; border:1px solid #C4B5FD; color:#6D28D9; padding:2px 7px; border-radius:4px; font-size:11px; font-weight:600;"><i class="fa-solid fa-water"></i> 정수·배수지 44개소</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 1. 공급량 데이터 업로드 -->
+            <div class="upload-drop-card" id="cardSupplyUpload">
+                <div class="drop-card-title"><i class="fa-solid fa-faucet" style="color:#0284c7;"></i> 1. 공급량 데이터 업로드 (.xlsx, .xlsm)</div>
+                <div class="drop-zone" id="dropZoneSupply" onclick="document.getElementById('fileSupplyInput').click()">
+                    <i class="fa-solid fa-folder-open drop-icon"></i>
+                    <span>공급량 엑셀 파일들을 선택하거나 여기로 드래그하세요</span>
+                    <small>파일명 날짜(YYYYMMDD) 기준 시간별 유량 및 야간최소유량(MNF) 자동 파싱</small>
+                </div>
+                <input type="file" id="fileSupplyInput" multiple accept=".xlsx, .xlsm" style="display:none;">
+                <div id="supplyFileStatus" class="drop-status-text">등록 대기 중: 0개 파일</div>
+            </div>
+
+            <!-- 2. 부과량 데이터 업로드 -->
+            <div class="upload-drop-card" id="cardChargeUpload">
+                <div class="drop-card-title"><i class="fa-solid fa-receipt" style="color:#10b981;"></i> 2. 부과량 데이터 업로드 (.xlsx)</div>
+                <div class="drop-zone" id="dropZoneCharge" onclick="document.getElementById('fileChargeInput').click()">
+                    <i class="fa-solid fa-file-excel drop-icon"></i>
+                    <span>수용가별 검침 부과량 파일을 선택하거나 드래그하세요</span>
+                    <small>수용가별 검침 데이터(T열:블록, K열:사용량) 기준 블록별 월간 부과량 자동 집계</small>
+                </div>
+                <input type="file" id="fileChargeInput" multiple accept=".xlsx, .xlsm" style="display:none;">
+                <div id="chargeFileStatus" class="drop-status-text">등록 대기 중: 0개 파일</div>
+            </div>
+
+            <!-- 3. 누수수리 데이터 업로드 -->
+            <div class="upload-drop-card" id="cardRepairUpload">
+                <div class="drop-card-title"><i class="fa-solid fa-wrench" style="color:#f59e0b;"></i> 3. 누수수리 데이터 업로드 (.xlsx, .xlsm, .csv)</div>
+                <div class="drop-zone" id="dropZoneRepair" onclick="document.getElementById('fileRepairInput').click()">
+                    <i class="fa-solid fa-screwdriver-wrench drop-icon"></i>
+                    <span>누수 수리 기록 엑셀 파일을 선택하거나 드래그하세요</span>
+                    <small>수리 기록(D열:블록명, N열:수리일자) 기준 수리 전후 유량 분석 및 누수 이력 자동 반영</small>
+                </div>
+                <input type="file" id="fileRepairInput" multiple accept=".xlsx, .xlsm, .csv" style="display:none;">
+                <div id="repairFileStatus" class="drop-status-text">등록 대기 중: 0개 파일</div>
+            </div>
+
+            <!-- 4. 기준 및 목표 유수율 데이터 업로드 -->
+            <div class="upload-drop-card" id="cardTargetUpload">
+                <div class="drop-card-title"><i class="fa-solid fa-bullseye" style="color:#ec4899;"></i> 4. 기준 및 목표 유수율 데이터 업로드 (.xlsx, .xls)</div>
+                <div class="drop-zone" id="dropZoneTarget" onclick="document.getElementById('fileTargetInput').click()">
+                    <i class="fa-solid fa-chart-line drop-icon"></i>
+                    <span>블록별 기준/목표 유수율 엑셀 파일을 선택하거나 드래그하세요</span>
+                    <small>A열:블록명, B열:기준유수율, C열:목표유수율 기준 목표 달성률 및 필요 MNF 자동 산출</small>
+                </div>
+                <input type="file" id="fileTargetInput" accept=".xlsx, .xls" style="display:none;">
+                <div id="targetFileStatus" class="drop-status-text">등록 대기 중: 0개 파일</div>
+            </div>
+
+            <!-- 5. 관망도 GIS 공간자료 업로드 -->
+            <div class="upload-drop-card" id="cardGisUpload">
+                <div class="drop-card-title" style="display:flex; justify-content:space-between; align-items:center;">
+                    <span><i class="fa-solid fa-map" style="color:#8b5cf6;"></i> 5. 관망도 GIS 공간자료 업로드 (SHP, ZIP, GeoJSON)</span>
+                    <button type="button" id="btnClearGisData" style="background:#FEE2E2; border:1px solid #FCA5A5; color:#DC2626; border-radius:6px; padding:3px 9px; font-size:11px; font-weight:700; cursor:pointer;" title="기존 배포된 GIS 데이터를 완전히 비우고 초기화합니다">
+                        <i class="fa-solid fa-trash-can"></i> 기존 GIS 데이터 비우기
+                    </button>
+                </div>
+                <div class="drop-zone" id="dropZoneShp" onclick="document.getElementById('fileShpInput').click()">
+                    <i class="fa-solid fa-layer-group drop-icon"></i>
+                    <span id="shpDropMainText">관로(배수관, 급수관) 및 계량기 SHP(압축 ZIP) 파일을 마우스로 끌어다 놓으세요</span>
+                    <small id="shpDropSubText">김해(gis).zip 등 GIS 압축파일 또는 .shp를 드래그하면 공간데이터로 자동 변환됩니다</small>
+                </div>
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-top:4px;">
+                    <label style="display:flex; align-items:center; gap:5px; font-size:11.5px; color:#4B5563; cursor:pointer;">
+                        <input type="checkbox" id="chkReplaceGisMode" checked style="accent-color:#8B5CF6;">
+                        <span>기존 GIS 삭제 후 새 파일로 전체 대체 (Clean Overwrite)</span>
+                    </label>
+                    <div id="shpFileStatus" class="drop-status-text">등록 대기 중: 0개 파일</div>
+                </div>
+                <input type="file" id="fileShpInput" accept=".zip, .shp, .dbf, .shx, .prj, .geojson, .json" multiple style="display:none;">
+                <div id="shpResultDetail" style="display:none; margin-top:12px;"></div>
+            </div>
+        </div>
+
+        <div class="modal-footer" style="background:#F8FAFC;">
+            <div style="font-size:12px; color:#64748b; display:flex; align-items:center; gap:8px;">
+                <span id="cloudSyncStatusBadge" style="background:#E2E8F0; color:#475569; padding:2px 8px; border-radius:12px; font-weight:600;">☁️ 클라우드 연결 대기</span>
+                <span>* 배포 즉시 모든 직원의 화면에 자동 동기화됩니다.</span>
+            </div>
+            <div style="display:flex; gap:8px;">
+                <button id="btnFetchCloudData" class="topo-btn" style="padding:10px 16px; font-size:13px;" title="기존 클라우드에 배포된 최신 자료를 즉시 내려받아 화면에 적용합니다">
+                    <i class="fa-solid fa-cloud-arrow-down" style="color:#0284c7;"></i> 클라우드 최신자료 수동 동기화
+                </button>
+                <button id="btnDeployCloud" class="btn-save-survey" style="background:linear-gradient(135deg, #2563EB, #1E40AF); padding:10px 24px; font-size:14px;">
+                    <i class="fa-solid fa-rocket"></i> 🚀 클라우드 최신화 배포 (대표자)
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ============================================================= -->
+<!-- [9. 기준 및 근거] 새 소스 자료 추가 모달 (NotebookLM Source)      -->
+<!-- ============================================================= -->
+<div id="modalAddSource" class="modal-backdrop" style="display:none;">
+    <div class="modal-card" style="width: 680px;">
+        <div class="modal-header">
+            <div class="modal-title">
+                <i class="fa-solid fa-file-circle-plus" style="color:#0284C7;"></i>
+                <span>새 소스 자료 추가 (NotebookLM Source)</span>
+            </div>
+            <button id="btnCloseAddSourceModal" class="modal-close-btn">&times;</button>
+        </div>
+        <div class="modal-body" style="display:flex; flex-direction:column; gap:16px;">
+            <div class="source-input-tabs">
+                <button type="button" class="source-tab-btn active" data-tab="tabUploadFile">
+                    <i class="fa-solid fa-file-pdf" style="color:#EF4444;"></i> PDF 파일 업로드 (.pdf, .txt, .md, .csv)
+                </button>
+                <button type="button" class="source-tab-btn" data-tab="tabPasteText">
+                    <i class="fa-solid fa-paste"></i> 텍스트 직접 입력 / 붙여넣기
+                </button>
+            </div>
+
+            <!-- 탭 1: 파일 업로드 -->
+            <div id="tabUploadFile" class="source-tab-content">
+                <div class="drop-zone" onclick="document.getElementById('inputSourceFile').click()" style="cursor:pointer; padding:28px 20px;">
+                    <i class="fa-solid fa-file-pdf drop-icon" style="color:#EF4444; font-size:40px; margin-bottom:8px;"></i>
+                    <span style="font-size:14px; font-weight:700; color:#1E293B;">PDF 기준 문서 파일을 선택하거나 드래그하세요</span>
+                    <small style="color:#64748B; margin-top:6px; line-height:1.5;">
+                        <i class="fa-solid fa-bolt" style="color:#F59E0B;"></i> PDF 텍스트를 페이지별로 자동 추출하여 <strong>98% 이상 용량을 압축</strong>한 뒤 클라우드에 안전하게 보관합니다.<br>
+                        (지원: .pdf, .txt, .md, .csv, .json)
+                    </small>
+                </div>
+                <input type="file" id="inputSourceFile" accept=".pdf, .txt, .md, .csv, .json" style="display:none;">
+                <div id="uploadFileStatusText" class="drop-status-text" style="font-size:12px; color:#64748B; text-align:center; margin-top:6px;">선택된 파일 없음</div>
+            </div>
+
+            <!-- 탭 2: 텍스트 직접 붙여넣기 -->
+            <div id="tabPasteText" class="source-tab-content" style="display:none; flex-direction:column; gap:12px;">
+                <div>
+                    <label style="font-size:12.5px; font-weight:700; color:#334155;">자료 제목 / 공식 명칭:</label>
+                    <input type="text" id="pasteSourceTitle" class="dash-input-sm" placeholder="예: [김해시] 2026 관망 정비 업무 지침" style="width:100%; margin-top:4px; padding:8px 12px; border:1px solid #CBD5E1; border-radius:6px; font-size:13px;">
+                </div>
+                <div>
+                    <label style="font-size:12.5px; font-weight:700; color:#334155;">문서 본문 내용 (법령, 조례 조항, 업무 지침 텍스트):</label>
+                    <textarea id="pasteSourceContent" rows="8" placeholder="여기에 법령 조문, 시설 기준 조항 또는 업무 지침 텍스트를 붙여넣으세요..." style="width:100%; margin-top:4px; padding:10px 12px; border:1px solid #CBD5E1; border-radius:6px; font-size:12.5px; line-height:1.6; resize:vertical;"></textarea>
+                </div>
+            </div>
+        </div>
+        <div class="modal-footer" style="padding:14px 20px; background:#F8FAFC; border-top:1px solid #E2E8F0; display:flex; justify-content:flex-end; gap:8px;">
+            <button type="button" class="btn-modal-cancel" id="btnCancelAddSource" style="padding:8px 16px; border:1px solid #CBD5E1; background:#FFF; border-radius:6px; font-size:13px; cursor:pointer;">취소</button>
+            <button type="button" class="btn-modal-confirm" id="btnConfirmAddSource" style="padding:8px 20px; background:#0284C7; color:#FFF; border:none; border-radius:6px; font-size:13px; font-weight:700; cursor:pointer;">
+                <i class="fa-solid fa-check"></i> 소스에 추가하기
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- ============================================================= -->
+<!-- [9. 기준 및 근거] 소스 원문 및 인용 구절 뷰어 모달              -->
+<!-- ============================================================= -->
+<div id="modalViewSource" class="modal-backdrop" style="display:none;">
+    <div class="modal-card" style="width: 740px; max-height:85vh; display:flex; flex-direction:column;">
+        <div class="modal-header">
+            <div class="modal-title">
+                <i class="fa-solid fa-book-open" style="color:#2563EB;"></i>
+                <span id="viewSourceModalTitle">소스 원문 및 근거 구절</span>
+            </div>
+            <button id="btnCloseViewSourceModal" class="modal-close-btn">&times;</button>
+        </div>
+        <div class="modal-body" style="flex:1; overflow-y:auto; padding:20px; font-size:13px; line-height:1.75; background:#F8FAFC;" id="viewSourceModalBody">
+            <!-- standardsLm.js에서 하이라이트와 함께 렌더링 -->
+        </div>
+    </div>
+</div>
+
+<!-- ============================================================= -->
+<!-- [9. 기준 및 근거] 보관된 질의응답 (노트 / 북마크 보관함) 모달   -->
+<!-- ============================================================= -->
+<div id="modalSavedNotes" class="modal-backdrop" style="display:none;">
+    <div class="modal-card" style="width: 840px; max-height:88vh; display:flex; flex-direction:column;">
+        <div class="modal-header" style="background:#FFFBEB; border-bottom:1px solid #FDE68A;">
+            <div class="modal-title" style="color:#92400E;">
+                <i class="fa-solid fa-bookmark" style="color:#D97706;"></i>
+                <span>보관된 기준 및 근거 질의응답 (보관함)</span>
+                <span id="savedNotesModalCountBadge" style="background:#F59E0B; color:#fff; font-size:11px; padding:2px 8px; border-radius:10px; font-weight:700; margin-left:6px;">0건</span>
+            </div>
+            <button id="btnCloseSavedNotesModal" class="modal-close-btn">&times;</button>
+        </div>
+        
+        <!-- 검색 및 컨트롤 툴바 -->
+        <div style="padding:12px 20px; background:#F8FAFC; border-bottom:1px solid #E2E8F0; display:flex; gap:12px; align-items:center; justify-content:space-between;">
+            <div style="flex:1; position:relative;">
+                <i class="fa-solid fa-magnifying-glass" style="position:absolute; left:12px; top:11px; color:#94A3B8; font-size:13px;"></i>
+                <input type="text" id="inputSearchSavedNotes" placeholder="보관된 질문, 기준 조항, 키워드를 검색하세요..." style="width:100%; padding:8px 12px 8px 34px; border:1px solid #CBD5E1; border-radius:6px; font-size:13px; background:#fff;">
+            </div>
+            <div style="display:flex; gap:8px;">
+                <button type="button" id="btnCopyAllSavedNotes" class="btn-modal-cancel" style="padding:7px 12px; font-size:12.5px; border:1px solid #CBD5E1; background:#fff; border-radius:6px; cursor:pointer;" title="보관된 모든 질의응답 텍스트를 클립보드에 복사">
+                    <i class="fa-regular fa-copy"></i> 전체 복사
+                </button>
+                <button type="button" id="btnClearAllSavedNotes" class="btn-modal-cancel" style="padding:7px 12px; font-size:12.5px; border:1px solid #FCA5A5; background:#FEF2F2; color:#DC2626; border-radius:6px; cursor:pointer;" title="보관함 전체 비우기">
+                    <i class="fa-solid fa-trash-can"></i> 전체 비우기
+                </button>
+            </div>
+        </div>
+
+        <div class="modal-body" style="flex:1; overflow-y:auto; padding:20px; font-size:13px; line-height:1.75; background:#F1F5F9;" id="savedNotesListContainer">
+            <!-- standardsLm.js에서 동적 렌더링 -->
+        </div>
+
+        <div class="modal-footer" style="padding:12px 20px; background:#F8FAFC; border-top:1px solid #E2E8F0; display:flex; justify-content:space-between; align-items:center;">
+            <span style="font-size:12px; color:#64748B;">
+                <i class="fa-solid fa-cloud-arrow-up" style="color:#0284C7;"></i> 보관된 내용은 Firebase 클라우드 및 로컬에 자동 동기화되어 영구 보존됩니다.
+            </span>
+            <button type="button" class="btn-modal-confirm" id="btnCloseSavedNotesBottom" style="padding:8px 20px; background:#2563EB; color:#fff; border:none; border-radius:6px; font-size:13px; font-weight:700; cursor:pointer;">
+                닫기
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- ============================================================= -->
+<!-- VWorld 지도 및 공간정보 API 설정 모달                        -->
+<!-- ============================================================= -->
+<div id="vworldConfigModal" class="modal-backdrop" style="display:none;">
+    <div class="modal-card" style="width: 580px; max-width: 95%;">
+        <div class="modal-header">
+            <div class="modal-title">
+                <i class="fa-solid fa-earth-asia" style="color:#2563EB;"></i>
+                <span>국토교통부 VWorld 지도 API 연동 설정</span>
+            </div>
+            <button id="btnCloseVworldConfig" class="modal-close-btn">&times;</button>
+        </div>
+        <div class="modal-body" style="display:flex; flex-direction:column; gap:14px; padding:20px; font-size:13px; line-height:1.6;">
+            <div style="background:#EFF6FF; border:1px solid #BFDBFE; border-radius:8px; padding:12px 14px;">
+                <div style="font-weight:700; color:#1E40AF; margin-bottom:4px; display:flex; align-items:center; gap:6px;">
+                    <i class="fa-solid fa-circle-check"></i> VWorld 2D / 위성영상 / 연속지적도 / 주소검색 2.0 연동
+                </div>
+                <div style="color:#1E3A8A; font-size:12px;">
+                    본 관망관리 시스템은 국토교통부 브이월드 오픈API를 활용하여 <strong>2D 일반지도, 고해상도 항공사진, 연속지적도(필지선)</strong> 및 <strong>도로명·지번 주소 검색/지오코딩</strong>을 제공합니다.
+                </div>
+            </div>
+
+            <div class="form-group" style="display:flex; flex-direction:column; gap:6px;">
+                <label class="form-label" style="font-weight:700; color:var(--text-primary);">
+                    VWorld API 인증키 (오픈API Key)
+                </label>
+                <div style="position:relative; display:flex; gap:8px;">
+                    <input type="text" id="inputVworldApiKey" class="form-input" placeholder="브이월드 인증키 (기본 내장키 제공중)" style="flex:1; font-family:monospace; font-size:12.5px;">
+                    <button type="button" id="btnTestVworldKey" class="btn-modal-cancel" style="padding:7px 14px; white-space:nowrap; border:1px solid #CBD5E1; background:#fff; border-radius:6px; cursor:pointer;" title="VWorld API 연결 상태 검증">
+                        <i class="fa-solid fa-vial"></i> 테스트
+                    </button>
+                </div>
+                <div id="vworldKeyTestMsg" style="font-size:11.5px; display:none; padding:4px 2px;"></div>
+                <small style="color:#64748B; font-size:11.5px;">
+                    * <strong>무결점 오프라인 보호:</strong> 인증키가 없거나 통신이 원활하지 않아도 김해시 관내 19개 읍면동 및 86개 소블록, 주요 수도시설과 간선도로가 내장 색인되어 100% 정상 작동합니다.
+                </small>
+            </div>
+
+            <!-- 카카오 지도 / 로드뷰 JavaScript API 설정 -->
+            <div class="form-group" style="display:flex; flex-direction:column; gap:6px; border-top:1px dashed #E2E8F0; padding-top:12px;">
+                <label class="form-label" style="font-weight:700; color:var(--text-primary); display:flex; align-items:center; gap:6px;">
+                    <i class="fa-solid fa-street-view" style="color:#F59E0B;"></i>
+                    카카오 로드뷰 JavaScript AppKey (선택 사항)
+                </label>
+                <div style="position:relative; display:flex; gap:8px;">
+                    <input type="text" id="inputKakaoAppKey" class="form-input" placeholder="카카오 개발자센터 JavaScript 키 (등록 시 로드뷰 내 화살표 클릭 자동 동기화)" style="flex:1; font-family:monospace; font-size:12.5px;">
+                    <button type="button" id="btnSaveKakaoKey" class="btn-modal-cancel" style="padding:7px 14px; white-space:nowrap; border:1px solid #CBD5E1; background:#fff; border-radius:6px; cursor:pointer;" title="카카오 키 저장 및 적용">
+                        <i class="fa-solid fa-check"></i> 적용
+                    </button>
+                </div>
+                <small style="color:#64748B; font-size:11.5px;">
+                    * <strong>화살표 100% 실시간 연동:</strong> 키 등록 시 로드뷰 내부의 3D 보행 화살표를 직접 클릭해도 왼쪽 지도 위치가 100% 자동으로 이동합니다. (미등록 시에도 전진/후진 버튼, 키보드 방향키(↑/↓), 지도 직접 클릭으로 완벽 연동)
+                </small>
+            </div>
+
+            <div style="background:#F8FAFC; border:1px solid #E2E8F0; border-radius:8px; padding:12px; font-size:12px; color:#475569;">
+                <div style="font-weight:700; margin-bottom:6px; color:#334155;">
+                    <i class="fa-solid fa-key" style="color:#F59E0B;"></i> 브이월드 무료 인증키 발급 가이드
+                </div>
+                <ol style="margin:0 0 0 16px; padding:0; display:flex; flex-direction:column; gap:3px;">
+                    <li><a href="https://www.vworld.kr" target="_blank" style="color:#2563EB; font-weight:600; text-decoration:underline;">브이월드 공식 홈페이지 (www.vworld.kr)</a> 접속 및 로그인</li>
+                    <li>상단 [개발자센터] &gt; [오픈API] &gt; [인증키 발급 신청]</li>
+                    <li>발급된 인증키를 위 입력창에 붙여넣고 [저장 및 적용]을 클릭하세요.</li>
+                </ol>
+            </div>
+        </div>
+        <div class="modal-footer" style="padding:12px 20px; background:#F8FAFC; border-top:1px solid #E2E8F0; display:flex; justify-content:space-between; align-items:center;">
+            <button type="button" id="btnResetVworldKey" class="btn-modal-cancel" style="padding:7px 14px; font-size:12px; border:1px solid #CBD5E1; background:#fff; border-radius:6px; cursor:pointer;">
+                기본키로 복원
+            </button>
+            <div style="display:flex; gap:8px;">
+                <button type="button" class="btn-modal-cancel" id="btnCloseVworldConfigBottom" style="padding:7px 16px; font-size:12.5px; border:1px solid #CBD5E1; background:#fff; border-radius:6px; cursor:pointer;">
+                    닫기
+                </button>
+                <button type="button" class="btn-modal-confirm" id="btnSaveVworldKey" style="padding:7px 20px; font-size:12.5px; background:#2563EB; color:#fff; border:none; border-radius:6px; font-weight:700; cursor:pointer;">
+                    <i class="fa-solid fa-check"></i> 저장 및 적용
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Leaflet GIS JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+<!-- 비즈니스 모듈 스크립트 -->
+<script src="js/topologyData.js?v=20261112f"></script>
+<script src="js/topologyCanvas.js?v=20261112f"></script>
+<script src="js/sampleData.js?v=20261112f"></script>
+<script src="js/cloudSync.js?v=20261117B"></script>
+<script src="js/imageCompressor.js?v=20261112f"></script>
+<script src="js/offlineStore.js?v=20261112f"></script>
+<!-- 김해시 실제 관망 GIS 공간데이터셋 (WGS84 변환) -->
+<script src="data/gimhae_gis_dataset.js?v=20261117B"></script>
+<script src="js/map.js?v=20261117B"></script>
+<!-- 수용가 부과량 데이터 (file:// 환경 CORS 차단 방지 및 고속 로드) -->
+<script defer src="data/consumer_charge_data.js"></script>
+<!-- 1. 유량 및 유수율 관리(수정작업) 100% 검증 기준 데이터셋 -->
+<script src="js/verifiedYieldData.js?v=20261113j"></script>
+<!-- 4. 목표유수율 관리 기준 데이터셋 & 분석 모듈 -->
+<script src="js/targetYieldStandardData.js?v=20261113Q"></script>
+<script src="js/targetManager.js?v=20261113Q"></script>
+<!-- 9. 기준 및 근거 AI 어시스턴트 (노트북LM Grounded Engine) -->
+<script src="js/standardsLm.js?v=20261113Q"></script>
+<script src="js/app.js?v=20261117B"></script>
+
+</body>
+</html>
