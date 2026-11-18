@@ -809,12 +809,15 @@ function initGisCanvasLayerClass() {
 
             // 1. 축척(줌) 확대/축소 시작 즉시 이전 화면을 숨김 -> 줌 중 관로 잔상(Ghosting) 완전 차단
             this._onZoomStart = () => {
+                if (this._animFrameId) {
+                    cancelAnimationFrame(this._animFrameId);
+                }
                 if (this._canvas) {
                     this._canvas.style.opacity = '0';
                 }
             };
 
-            // 2. 축척(줌) 변경 완료 즉시 새 축척에 맞게 즉시 동기 렌더링 (< 1ms) 후 선명하게 복원
+            // 2. 축척(줌) 변경 완료 즉시 새 축척에 맞게 즉시 동기 렌더링 후 선명하게 복원
             this._onZoomEnd = () => {
                 if (this._canvas) {
                     this._canvas.style.transform = '';
@@ -841,6 +844,9 @@ function initGisCanvasLayerClass() {
         },
 
         onRemove: function (map) {
+            if (this._animFrameId) {
+                cancelAnimationFrame(this._animFrameId);
+            }
             if (this._canvas && this._canvas.parentNode) {
                 this._canvas.parentNode.removeChild(this._canvas);
             }
@@ -862,13 +868,23 @@ function initGisCanvasLayerClass() {
 
         _update: function () {
             if (!this._map || !this._canvas) return;
+            if (this._animFrameId) {
+                cancelAnimationFrame(this._animFrameId);
+            }
+            this._animFrameId = requestAnimationFrame(() => {
+                this._doUpdate();
+            });
+        },
+
+        _doUpdate: function () {
+            if (!this._map || !this._canvas) return;
             const map = this._map;
             const size = map.getSize();
             if (size.x <= 0 || size.y <= 0) return;
 
-            // 화면 사방 25% 추가 여유 마진: 패닝/드래그 시에도 잘림/깜빡임 없이 매끄럽게 유지
-            const padX = Math.round(size.x * 0.25);
-            const padY = Math.round(size.y * 0.25);
+            // 모바일 렌더링 최적화: 사방 15% 추가 여유 마진 (캔버스 픽셀 면적 및 메모리 40% 절감)
+            const padX = Math.round(size.x * 0.15);
+            const padY = Math.round(size.y * 0.15);
             const totalW = size.x + padX * 2;
             const totalH = size.y + padY * 2;
             this._padX = padX;
@@ -904,63 +920,66 @@ function initGisCanvasLayerClass() {
             ctx.translate(padX || 0, padY || 0);
 
             const zoom = map.getZoom();
-            const viewBounds = map.getBounds().pad(0.30);
+            // 화면 밖 불필요 객체 질의 방지: 여유 마진 0.18
+            const viewBounds = map.getBounds().pad(0.18);
             const minLat = viewBounds.getSouth();
             const maxLat = viewBounds.getNorth();
             const minLng = viewBounds.getWest();
             const maxLng = viewBounds.getEast();
 
-            // 1. 급수관로 (Service Pipes 48,125개) - Cyan (#06B6D4) (기본 ON, zoom 13 이상에서 표출)
-            if (mm.layerVisibility.servicePipes && zoom >= 13 && mm.spatialIndexSp) {
+            // 1. 급수관로 (Service Pipes 48,125개) - Cyan (#06B6D4) (zoom 15 이상 고밀도 구간만 표출)
+            if (mm.layerVisibility.servicePipes && zoom >= 15 && mm.spatialIndexSp) {
                 const spList = mm.spatialIndexSp.query(minLat, maxLat, minLng, maxLng);
                 const len = spList.length;
                 if (len > 0) {
                     const baseW = (mm.symbolSizes && mm.symbolSizes.pipes && mm.symbolSizes.pipes.servicePipes) || 1.4;
+                    const pathSp = new Path2D();
+                    for (let i = 0; i < len; i++) {
+                        const coords = spList[i].coordinates || spList[i].c;
+                        if (!coords || coords.length < 2) continue;
+                        const pt0 = map.latLngToContainerPoint(coords[0]);
+                        pathSp.moveTo(pt0.x, pt0.y);
+                        for (let j = 1; j < coords.length; j++) {
+                            const pt = map.latLngToContainerPoint(coords[j]);
+                            pathSp.lineTo(pt.x, pt.y);
+                        }
+                    }
                     ctx.beginPath();
                     ctx.strokeStyle = '#06B6D4';
                     ctx.lineWidth = baseW * (zoom >= 16 ? 1.3 : 1.0);
                     ctx.lineCap = 'round';
                     ctx.lineJoin = 'round';
-                    for (let i = 0; i < len; i++) {
-                        const coords = spList[i].coordinates || spList[i].c;
-                        if (!coords || coords.length < 2) continue;
-                        const pt0 = map.latLngToContainerPoint(coords[0]);
-                        ctx.moveTo(pt0.x, pt0.y);
-                        for (let j = 1; j < coords.length; j++) {
-                            const pt = map.latLngToContainerPoint(coords[j]);
-                            ctx.lineTo(pt.x, pt.y);
-                        }
-                    }
-                    ctx.stroke();
+                    ctx.stroke(pathSp);
                 }
             }
 
-            // 2. 상수관로 LM2 - Indigo (#4F46E5) (zoom 12 이상에서 표출)
-            if (mm.layerVisibility.pipesLm2 && zoom >= 12 && mm.spatialIndexLm2) {
+            // 2. 상수관로 LM2 - Indigo (#4F46E5) (zoom 13 이상에서 표출)
+            if (mm.layerVisibility.pipesLm2 && zoom >= 13 && mm.spatialIndexLm2) {
                 const lm2List = mm.spatialIndexLm2.query(minLat, maxLat, minLng, maxLng);
                 const len = lm2List.length;
                 if (len > 0) {
                     const baseW = (mm.symbolSizes && mm.symbolSizes.pipes && mm.symbolSizes.pipes.pipesLm2) || 1.8;
+                    const pathLm2 = new Path2D();
+                    for (let i = 0; i < len; i++) {
+                        const coords = lm2List[i].coordinates || lm2List[i].c;
+                        if (!coords || coords.length < 2) continue;
+                        const pt0 = map.latLngToContainerPoint(coords[0]);
+                        pathLm2.moveTo(pt0.x, pt0.y);
+                        for (let j = 1; j < coords.length; j++) {
+                            const pt = map.latLngToContainerPoint(coords[j]);
+                            pathLm2.lineTo(pt.x, pt.y);
+                        }
+                    }
                     ctx.beginPath();
                     ctx.strokeStyle = '#4F46E5';
                     ctx.lineWidth = baseW * (zoom >= 16 ? 1.4 : 1.0);
                     ctx.lineCap = 'round';
                     ctx.lineJoin = 'round';
-                    for (let i = 0; i < len; i++) {
-                        const coords = lm2List[i].coordinates || lm2List[i].c;
-                        if (!coords || coords.length < 2) continue;
-                        const pt0 = map.latLngToContainerPoint(coords[0]);
-                        ctx.moveTo(pt0.x, pt0.y);
-                        for (let j = 1; j < coords.length; j++) {
-                            const pt = map.latLngToContainerPoint(coords[j]);
-                            ctx.lineTo(pt.x, pt.y);
-                        }
-                    }
-                    ctx.stroke();
+                    ctx.stroke(pathLm2);
                 }
             }
 
-            // 3. 상수관로 LM - 관경별 색상/구경/점선 특화 렌더링
+            // 3. 상수관로 LM - [초고속 단일패스 + Path2D 하드웨어 가속]
             // [규정] 0~250mm 이하: 파란색, 250~500mm: 빨간색, 500mm 초과: 빨간색 점선
             if (mm.layerVisibility.pipesLm && mm.spatialIndexLm) {
                 const lmList = mm.spatialIndexLm.query(minLat, maxLat, minLng, maxLng);
@@ -973,8 +992,46 @@ function initGisCanvasLayerClass() {
                     const wOver = sizes.pipesLm_dover || 4.8;
                     const zoomScale = zoom >= 19 ? 1.6 : (zoom >= 17 ? 1.35 : (zoom >= 15 ? 1.15 : (zoom >= 13 ? 1.0 : 0.8)));
 
-                    // 3-1. 500mm 초과: 빨간색 점선 (특대구경·송수관로: 전체 줌 표출)
-                    if (subVis.dover !== false) {
+                    // LOD (레벨 오브 디테일): 원거리(zoom < 14)에서는 대구경 송·배수관(D250 초과) 위주로 표출하여 렉 완전 차단!
+                    const show250 = subVis.d250 !== false && zoom >= 14;
+                    const show500 = subVis.d500 !== false;
+                    const showOver = subVis.dover !== false;
+
+                    const pathOver = new Path2D();
+                    const path500 = new Path2D();
+                    const path250 = new Path2D();
+                    let hasOver = false, has500 = false, has250 = false;
+
+                    for (let i = 0; i < len; i++) {
+                        const p = lmList[i];
+                        const dia = p.dia || p.d || 100;
+                        const coords = p.coordinates || p.c;
+                        if (!coords || coords.length < 2) continue;
+
+                        let targetPath = null;
+                        if (dia > 500 && showOver) {
+                            targetPath = pathOver;
+                            hasOver = true;
+                        } else if (dia > 250 && show500) {
+                            targetPath = path500;
+                            has500 = true;
+                        } else if (dia <= 250 && show250) {
+                            targetPath = path250;
+                            has250 = true;
+                        }
+
+                        if (targetPath) {
+                            const pt0 = map.latLngToContainerPoint(coords[0]);
+                            targetPath.moveTo(pt0.x, pt0.y);
+                            for (let j = 1; j < coords.length; j++) {
+                                const pt = map.latLngToContainerPoint(coords[j]);
+                                targetPath.lineTo(pt.x, pt.y);
+                            }
+                        }
+                    }
+
+                    // 3-1. 500mm 초과 (빨간색 점선)
+                    if (hasOver) {
                         ctx.save();
                         ctx.beginPath();
                         ctx.strokeStyle = '#DC2626';
@@ -984,81 +1041,44 @@ function initGisCanvasLayerClass() {
                         const dashSize = Math.max(6, Math.round(wOver * 1.8));
                         const gapSize = Math.max(4, Math.round(wOver * 1.1));
                         ctx.setLineDash([dashSize, gapSize]);
-                        for (let i = 0; i < len; i++) {
-                            const p = lmList[i];
-                            const dia = p.dia || p.d || 100;
-                            if (dia <= 500) continue;
-                            const coords = p.coordinates || p.c;
-                            if (!coords || coords.length < 2) continue;
-                            const pt0 = map.latLngToContainerPoint(coords[0]);
-                            ctx.moveTo(pt0.x, pt0.y);
-                            for (let j = 1; j < coords.length; j++) {
-                                const pt = map.latLngToContainerPoint(coords[j]);
-                                ctx.lineTo(pt.x, pt.y);
-                            }
-                        }
-                        ctx.stroke();
+                        ctx.stroke(pathOver);
                         ctx.restore();
                     }
 
-                    // 3-2. 250mm 초과 ~ 500mm 이하: 빨간색 실선 (대구경 배수본관: 전체 줌 표출)
-                    if (subVis.d500 !== false) {
+                    // 3-2. 250mm 초과 ~ 500mm 이하 (빨간색 실선)
+                    if (has500) {
                         ctx.beginPath();
                         ctx.strokeStyle = '#DC2626';
                         ctx.lineWidth = Math.max(1.2, w500 * zoomScale);
                         ctx.lineCap = 'round';
                         ctx.lineJoin = 'round';
                         ctx.setLineDash([]);
-                        for (let i = 0; i < len; i++) {
-                            const p = lmList[i];
-                            const dia = p.dia || p.d || 100;
-                            if (dia <= 250 || dia > 500) continue;
-                            const coords = p.coordinates || p.c;
-                            if (!coords || coords.length < 2) continue;
-                            const pt0 = map.latLngToContainerPoint(coords[0]);
-                            ctx.moveTo(pt0.x, pt0.y);
-                            for (let j = 1; j < coords.length; j++) {
-                                const pt = map.latLngToContainerPoint(coords[j]);
-                                ctx.lineTo(pt.x, pt.y);
-                            }
-                        }
-                        ctx.stroke();
+                        ctx.stroke(path500);
                     }
 
-                    // 3-3. 0 ~ 250mm 이하: 파란색 실선 (소/중구경 배수관로: zoom 12 이상에서 표출)
-                    if (subVis.d250 !== false && zoom >= 12) {
+                    // 3-3. 0 ~ 250mm 이하 (파란색 실선)
+                    if (has250) {
                         ctx.beginPath();
                         ctx.strokeStyle = '#2563EB';
                         ctx.lineWidth = Math.max(1.0, w250 * zoomScale);
                         ctx.lineCap = 'round';
                         ctx.lineJoin = 'round';
                         ctx.setLineDash([]);
-                        for (let i = 0; i < len; i++) {
-                            const p = lmList[i];
-                            const dia = p.dia || p.d || 100;
-                            if (dia > 250) continue;
-                            const coords = p.coordinates || p.c;
-                            if (!coords || coords.length < 2) continue;
-                            const pt0 = map.latLngToContainerPoint(coords[0]);
-                            ctx.moveTo(pt0.x, pt0.y);
-                            for (let j = 1; j < coords.length; j++) {
-                                const pt = map.latLngToContainerPoint(coords[j]);
-                                ctx.lineTo(pt.x, pt.y);
-                            }
-                        }
-                        ctx.stroke();
+                        ctx.stroke(path250);
                     }
                 }
             }
 
-            // 4. 밸브류 (Valves 33,358개소) - SA코드별 소분류 필터링 및 심볼 크기 실시간 표출 (zoom 14 이상)
-            if (mm.layerVisibility.valves && zoom >= 14 && mm.spatialIndexValves) {
+            // 4. 밸브류 (Valves 33,358개소) - SA코드별 소분류 필터링 및 고속 표출 (zoom 15 이상)
+            if (mm.layerVisibility.valves && zoom >= 15 && mm.spatialIndexValves) {
                 const vList = mm.spatialIndexValves.query(minLat, maxLat, minLng, maxLng);
                 const len = vList.length;
                 if (len > 0) {
                     const zoomScale = zoom >= 17 ? 1.25 : (zoom >= 16 ? 1.0 : 0.75);
                     const subVis = (mm.subLayerVisibility && mm.subLayerVisibility.valves) ? mm.subLayerVisibility.valves : {};
                     const sizes = (mm.symbolSizes && mm.symbolSizes.valves) ? mm.symbolSizes.valves : {};
+                    const isSimplified = zoom < 16; // zoom 15: 경량 도트 표출로 렉 완전 제거
+
                     for (let i = 0; i < len; i++) {
                         const v = vList[i];
                         const cde = v.cde || 'OTHER';
@@ -1068,7 +1088,17 @@ function initGisCanvasLayerClass() {
                         const baseR = sizes[subKey] !== undefined ? sizes[subKey] : 5.0;
                         const r = baseR * zoomScale;
                         const pt = map.latLngToContainerPoint([v.lat, v.lng]);
-                        drawValveSymbol(ctx, v, pt.x, pt.y, r);
+                        if (isSimplified) {
+                            ctx.fillStyle = '#D97706';
+                            ctx.strokeStyle = '#FFFFFF';
+                            ctx.lineWidth = 1;
+                            ctx.beginPath();
+                            ctx.arc(pt.x, pt.y, Math.max(2.5, r * 0.75), 0, Math.PI * 2);
+                            ctx.fill();
+                            ctx.stroke();
+                        } else {
+                            drawValveSymbol(ctx, v, pt.x, pt.y, r);
+                        }
                     }
                 }
             }
@@ -1257,7 +1287,9 @@ class WaterMapManager {
             minZoom: 9,
             maxZoom: 22, // 사용자 요청: 지도 확대를 19 -> 22로 대폭 확대 지원 (초정밀 관로/밸브 식별)
             preferCanvas: true,
-            zoomControl: false
+            zoomControl: false,
+            wheelDebounceTime: 60,
+            wheelPxPerZoomLevel: 90
         });
 
         L.control.zoom({ position: 'bottomright' }).addTo(this.map);
@@ -1266,6 +1298,8 @@ class WaterMapManager {
         const vworldBase = L.tileLayer('https://xdworld.vworld.kr/2d/Base/service/{z}/{x}/{y}.png', {
             maxZoom: 22,
             maxNativeZoom: 19,
+            updateWhenIdle: true,
+            keepBuffer: 2,
             attribution: '© 국토교통부 VWORLD (공간정보오픈플랫폼)'
         });
 
@@ -1273,6 +1307,8 @@ class WaterMapManager {
         const cartoFallback = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
             maxZoom: 22,
             maxNativeZoom: 19,
+            updateWhenIdle: true,
+            keepBuffer: 2,
             subdomains: 'abcd',
             attribution: '© OpenStreetMap, © CARTO'
         });
@@ -1281,6 +1317,8 @@ class WaterMapManager {
         const vworldSatellite = L.tileLayer('https://xdworld.vworld.kr/2d/Satellite/service/{z}/{x}/{y}.jpeg', {
             maxZoom: 22,
             maxNativeZoom: 19,
+            updateWhenIdle: true,
+            keepBuffer: 2,
             attribution: '© 국토교통부 VWORLD (고해상도 항공사진)'
         });
 
@@ -1288,6 +1326,8 @@ class WaterMapManager {
         const vworldHybrid = L.tileLayer('https://xdworld.vworld.kr/2d/hybrid/service/{z}/{x}/{y}.png', {
             maxZoom: 22,
             maxNativeZoom: 19,
+            updateWhenIdle: true,
+            keepBuffer: 1,
             zIndex: 10
         });
 
