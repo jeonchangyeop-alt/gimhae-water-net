@@ -2264,8 +2264,60 @@ body, html {
 
 /* 모바일 반응형 처리 */
 @media (max-width: 768px) {
-    .header-left-group { gap: 8px; }
-    .nav-dropbtn span, .nav-single-btn span { display: none; }
+    /* 최상단 네비게이션 헤더: 가로 스와이프/스크롤 지원 (유수율, 일정표, 기준 등 9개 메뉴 전체 선택 가능) */
+    .top-navbar {
+        height: 52px !important;
+        padding: 0 10px !important;
+        overflow-x: auto !important;
+        overflow-y: hidden !important;
+        -webkit-overflow-scrolling: touch !important;
+        scrollbar-width: none !important;
+        justify-content: flex-start !important;
+        gap: 8px !important;
+    }
+    .top-navbar::-webkit-scrollbar {
+        display: none !important;
+    }
+    .header-left-group {
+        display: flex !important;
+        flex-wrap: nowrap !important;
+        align-items: center !important;
+        gap: 6px !important;
+        flex-shrink: 0 !important;
+    }
+    .brand-section {
+        flex-shrink: 0 !important;
+        gap: 6px !important;
+    }
+    .brand-title {
+        font-size: 13.5px !important;
+        white-space: nowrap !important;
+    }
+    .brand-badge {
+        display: none !important;
+    }
+    .nav-single-btn, .nav-dropbtn {
+        flex-shrink: 0 !important;
+        padding: 6px 10px !important;
+        font-size: 11.5px !important;
+        white-space: nowrap !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        gap: 4px !important;
+    }
+    .nav-dropbtn span, .nav-single-btn span {
+        display: inline !important;
+        font-size: 11.5px !important;
+    }
+    .header-controls {
+        flex-shrink: 0 !important;
+    }
+    .btn-theme-toggle {
+        padding: 6px 8px !important;
+    }
+    .btn-theme-toggle #themeToggleText {
+        display: none !important;
+    }
     .btn-header-admin .btn-text { display: none; }
     .stat-cards-grid { grid-template-columns: 1fr; }
     .dash-tab-nav { flex-wrap: wrap; }
@@ -9973,16 +10025,18 @@ body.theme-navy .glc-sub-badge {
 .glc-size-row {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 4px;
     margin-top: 3px;
-    padding-left: 19px;
+    padding-left: 2px;
 }
 
 .glc-size-tag {
     font-size: 10px;
     color: #64748B;
     font-weight: 600;
-    width: 32px;
+    min-width: 44px;
+    width: auto;
+    white-space: nowrap;
     flex-shrink: 0;
 }
 
@@ -10030,13 +10084,20 @@ body.theme-navy .glc-size-num {
 }
 
 @media (max-width: 768px) {
-    /* 1. 좌측 GIS 레이어 패널 모바일 컴팩트 스타일 (사용자 요청: 옆으로 펼쳐지는 폭 대폭 축소) */
+    /* 1. 좌측 GIS 레이어 패널 모바일 컴팩트 스타일 (사용자 요청: 하위 항목 펼쳤을 때 옆으로 창 안넘어가도록 최적화) */
     .gis-layer-control-panel {
         top: 10px;
         left: 10px;
-        width: min(218px, calc(100vw - 20px)) !important;
+        width: min(242px, calc(100vw - 20px)) !important;
         max-height: calc(100vh - 110px);
         box-shadow: 0 8px 24px rgba(15, 23, 42, 0.25);
+    }
+
+    .glc-sub-panel {
+        margin: 2px 0 6px 2px !important;
+        padding: 5px 6px !important;
+        box-sizing: border-box !important;
+        overflow: hidden !important;
     }
 
     .gis-layer-control-panel .glc-header {
@@ -10740,6 +10801,28 @@ body.theme-navy .glc-modal-label {
 body.theme-navy .glc-slider-round {
     background-color: #475569;
 }
+
+/* ========================================================================= */
+/* 사용자 요청: 플로팅 컨트롤 드래그 앤 드롭 이동 전용 스타일 (PC + 모바일)    */
+/* ========================================================================= */
+.is-dragging-floating {
+    opacity: 0.90 !important;
+    transform: scale(1.04) !important;
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35) !important;
+    cursor: grabbing !important;
+    user-select: none !important;
+    touch-action: none !important;
+    z-index: 9999 !important;
+    transition: none !important;
+}
+
+.btn-map-ctrl-fab,
+.btn-map-location-fab,
+.gis-layer-control-panel.collapsed,
+.gis-layer-control-panel .glc-header {
+    touch-action: none;
+}
+
 
 
 
