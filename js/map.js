@@ -1140,6 +1140,12 @@ class WaterMapManager {
             leaks: null,
             verification: null // 주소 확인 마커 & 버퍼 레이어
         };
+        // GPS 현재 위치 인식 마커 & 정확도 원 & 추적 ID
+        this.userLocationMarker = null;
+        this.userLocationAccuracyCircle = null;
+        this.userLocationWatchId = null;
+        this.currentUserLatLng = null;
+
         // 사용자 요청: 최초 켜지는 레이어는 블록경계, 상수관로(LM), 밸브류(SA910, SA202 제외)만 기본 활성화 (급수관로/부과량 제외로 속도 극대화)
         this.layerVisibility = {
             blocks: true,
@@ -2727,6 +2733,139 @@ class WaterMapManager {
         } else {
             this.map.setView([35.2285, 128.8893], 14);
         }
+    }
+
+    /**
+     * 모바일 GPS 현재 위치 인식 및 지도 즉시 이동
+     * @param {boolean} panToLocation - 현재 위치로 지도를 이동(flyTo)할지 여부 (기본: true)
+     * @param {boolean} showNotification - 사용자 안내 알림 표출 여부 (기본: true)
+     */
+    locateUser(panToLocation = true, showNotification = true) {
+        if (!navigator.geolocation) {
+            if (showNotification) alert("현재 브라우저 또는 스마트폰 기기에서 GPS 위치 기능을 지원하지 않습니다.");
+            return;
+        }
+
+        const btnLoc = document.getElementById('btnMapCurrentLocation');
+        if (btnLoc) btnLoc.classList.add('loading');
+
+        const geoOptions = {
+            enableHighAccuracy: true,
+            timeout: 10000,
+            maximumAge: 0
+        };
+
+        const onGeoSuccess = (pos) => {
+            const lat = pos.coords.latitude;
+            const lng = pos.coords.longitude;
+            const accuracy = pos.coords.accuracy || 15;
+            this.currentUserLatLng = [lat, lng];
+
+            if (btnLoc) {
+                btnLoc.classList.remove('loading');
+                btnLoc.classList.add('tracking');
+            }
+
+            // 기존 마커 및 오차 반경 원 정리
+            if (this.userLocationMarker && this.map) {
+                this.map.removeLayer(this.userLocationMarker);
+            }
+            if (this.userLocationAccuracyCircle && this.map) {
+                this.map.removeLayer(this.userLocationAccuracyCircle);
+            }
+
+            // 1. 오차 반경 원 (반투명 파란색)
+            this.userLocationAccuracyCircle = L.circle([lat, lng], {
+                radius: Math.max(accuracy, 10),
+                color: '#3B82F6',
+                weight: 1.5,
+                fillColor: '#60A5FA',
+                fillOpacity: 0.15,
+                interactive: false
+            }).addTo(this.map);
+
+            // 2. 펄스 애니메이션 현재위치 블루도트 마커
+            const gpsIcon = L.divIcon({
+                className: 'custom-user-gps-icon',
+                html: `
+                    <div class="user-gps-pulse-wrapper">
+                        <div class="user-gps-pulse-ring"></div>
+                        <div class="user-gps-pulse-dot"></div>
+                    </div>
+                `,
+                iconSize: [28, 28],
+                iconAnchor: [14, 14]
+            });
+
+            this.userLocationMarker = L.marker([lat, lng], {
+                icon: gpsIcon,
+                zIndexOffset: 10000,
+                title: '내 현재 위치'
+            }).addTo(this.map);
+
+            this.userLocationMarker.bindTooltip(`📍 내 현재 위치 (오차: 약 ±${Math.round(accuracy)}m)`, {
+                direction: 'top',
+                offset: [0, -12],
+                permanent: false
+            });
+
+            // 3. 지도를 현재 위치로 부드럽게 줌 이동 (현장 관로/밸브가 뚜렷이 보이는 18레벨)
+            if (panToLocation && this.map) {
+                const targetZoom = Math.max(this.map.getZoom(), 18);
+                this.map.flyTo([lat, lng], targetZoom, {
+                    animate: true,
+                    duration: 0.8
+                });
+            }
+
+            // 4. 걸어갈 때 블루 도트가 따라오도록 백그라운드 추적 감시 시작
+            if (!this.userLocationWatchId) {
+                this.startLocationTracking();
+            }
+        };
+
+        const onGeoError = (err) => {
+            if (btnLoc) btnLoc.classList.remove('loading');
+            console.warn('[GPS] 위치 획득 실패:', err);
+            if (showNotification) {
+                if (err.code === 1) { // PERMISSION_DENIED
+                    alert("GPS 위치 접근 권한이 차단되어 있습니다.\n브라우저 주소창 왼쪽의 자물쇠/설정 아이콘에서 [위치 접근]을 '허용'해 주세요.");
+                } else if (err.code === 3) { // TIMEOUT
+                    alert("GPS 신호 수신 시간이 초과되었습니다.\n신호가 잘 잡히는 야외에서 다시 시도해 주세요.");
+                } else {
+                    alert("현재 위치를 가져올 수 없습니다 (" + (err.message || '오류') + ").");
+                }
+            }
+        };
+
+        navigator.geolocation.getCurrentPosition(onGeoSuccess, onGeoError, geoOptions);
+    }
+
+    /**
+     * 현장 이동 시 내 위치 실시간 추적 감시 (블루 도트 이동)
+     */
+    startLocationTracking() {
+        if (!navigator.geolocation || this.userLocationWatchId) return;
+
+        this.userLocationWatchId = navigator.geolocation.watchPosition(
+            (pos) => {
+                const lat = pos.coords.latitude;
+                const lng = pos.coords.longitude;
+                const accuracy = pos.coords.accuracy || 15;
+                this.currentUserLatLng = [lat, lng];
+
+                if (this.userLocationMarker) {
+                    this.userLocationMarker.setLatLng([lat, lng]);
+                    this.userLocationMarker.setTooltipContent(`📍 내 현재 위치 (오차: 약 ±${Math.round(accuracy)}m)`);
+                }
+                if (this.userLocationAccuracyCircle) {
+                    this.userLocationAccuracyCircle.setLatLng([lat, lng]);
+                    this.userLocationAccuracyCircle.setRadius(Math.max(accuracy, 10));
+                }
+            },
+            (err) => console.warn('[GPS Watch] 추적 경고:', err),
+            { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 }
+        );
     }
 
     /**

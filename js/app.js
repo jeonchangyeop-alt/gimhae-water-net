@@ -183,6 +183,15 @@ function switchMainView(viewType, subTab = 'dash-supply') {
                 } else if (typeof mapManager.fitGisBounds === 'function') {
                     mapManager.fitGisBounds();
                 }
+
+                // 모바일 환경일 경우 백그라운드에서 현재 위치 마커를 미리 인식 (지도는 전체 뷰 유지)
+                if (navigator.geolocation && (window.innerWidth <= 768 || /Mobi|Android|iPhone/i.test(navigator.userAgent))) {
+                    setTimeout(() => {
+                        if (mapManager && typeof mapManager.locateUser === 'function') {
+                            mapManager.locateUser(false, false);
+                        }
+                    }, 1500);
+                }
             }
         }, 150);
     } else if (viewType === 'UNUSED_PIPE') {
@@ -5173,6 +5182,17 @@ function initVWorldMapControls() {
     };
     if (btnExportGisGeoJson) btnExportGisGeoJson.addEventListener('click', handleGisExport);
     if (btnGlcExportGeoJson) btnGlcExportGeoJson.addEventListener('click', handleGisExport);
+
+    // [우측 하단: GPS 내 현재 위치 바로가기]
+    const btnMapCurrentLocation = document.getElementById('btnMapCurrentLocation');
+    if (btnMapCurrentLocation) {
+        btnMapCurrentLocation.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (mapManager && typeof mapManager.locateUser === 'function') {
+                mapManager.locateUser(true, true);
+            }
+        });
+    }
 
     // [조사자 성명 자동 기억 및 동기화]
     const inputSurveyor = document.getElementById('inputSurveyor');

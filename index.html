@@ -23,7 +23,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1"></script>
     <!-- 커스텀 스타일 -->
-    <link rel="stylesheet" href="css/style.css?v=20261117D">
+    <link rel="stylesheet" href="css/style.css?v=20261118A">
 </head>
 <body>
 
@@ -933,6 +933,11 @@
 
         <div class="main-content">
             <div id="map"></div>
+
+            <!-- 우측 하단: 내 현재 위치(GPS) 바로가기 플로팅 버튼 -->
+            <button type="button" id="btnMapCurrentLocation" class="btn-map-location-fab" title="내 현재 위치로 지도 이동">
+                <i class="fa-solid fa-location-crosshairs"></i>
+            </button>
 
             <!-- GIS 공간데이터 초고속 비동기 로딩 프로그레스 인디케이터 오버레이 -->
             <div id="gisLoadingOverlay" class="gis-loading-overlay" style="display:none;">
@@ -2854,7 +2859,7 @@
 <script src="js/offlineStore.js?v=20261112f"></script>
 <!-- 김해시 실제 관망 GIS 공간데이터셋 (WGS84 변환) -->
 <script src="data/gimhae_gis_dataset.js?v=20261117B"></script>
-<script src="js/map.js?v=20261117D"></script>
+<script src="js/map.js?v=20261118A"></script>
 <!-- 수용가 부과량 데이터 (file:// 환경 CORS 차단 방지 및 고속 로드) -->
 <script defer src="data/consumer_charge_data.js"></script>
 <!-- 1. 유량 및 유수율 관리(수정작업) 100% 검증 기준 데이터셋 -->
@@ -2864,7 +2869,7 @@
 <script src="js/targetManager.js?v=20261113Q"></script>
 <!-- 9. 기준 및 근거 AI 어시스턴트 (노트북LM Grounded Engine) -->
 <script src="js/standardsLm.js?v=20261113Q"></script>
-<script src="js/app.js?v=20261117D"></script>
+<script src="js/app.js?v=20261118A"></script>
 
 <script>
     // 카카오톡 인앱 브라우저 감지 시 안내 및 크롬 전환
