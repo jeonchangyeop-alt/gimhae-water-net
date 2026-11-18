@@ -10030,32 +10030,32 @@ body.theme-navy .glc-size-num {
 }
 
 @media (max-width: 768px) {
-    /* 1. 좌측 GIS 레이어 패널 모바일 컴팩트 스타일 */
+    /* 1. 좌측 GIS 레이어 패널 모바일 컴팩트 스타일 (사용자 요청: 옆으로 펼쳐지는 폭 대폭 축소) */
     .gis-layer-control-panel {
         top: 10px;
         left: 10px;
-        width: min(290px, calc(100vw - 20px));
-        max-height: calc(100vh - 120px);
+        width: min(218px, calc(100vw - 20px)) !important;
+        max-height: calc(100vh - 110px);
         box-shadow: 0 8px 24px rgba(15, 23, 42, 0.25);
     }
 
     .gis-layer-control-panel .glc-header {
-        padding: 8px 10px;
+        padding: 6px 8px;
     }
 
     .gis-layer-control-panel .glc-title {
-        font-size: 12px;
+        font-size: 11.5px;
         white-space: nowrap;
     }
 
     .glc-toggle-all-btn {
-        font-size: 10px;
-        padding: 2px 6px;
+        font-size: 9.5px;
+        padding: 2px 5px;
     }
 
     .glc-collapse-btn {
-        padding: 4px 8px;
-        font-size: 13px;
+        padding: 3px 6px;
+        font-size: 12px;
         background: #F1F5F9;
         border-radius: 6px;
         color: #475569;
@@ -10063,26 +10063,39 @@ body.theme-navy .glc-size-num {
     }
 
     .glc-body {
-        padding: 5px 8px 8px 8px;
+        padding: 4px 6px 6px 6px;
         gap: 2px;
     }
 
     .glc-section-heading {
-        font-size: 10.5px;
-        padding: 3px 6px;
+        font-size: 10px;
+        padding: 2px 4px;
     }
 
     .glc-layer-row {
-        padding: 3px 4px;
+        padding: 2.5px 3px;
+        gap: 3px;
     }
 
     .glc-name {
-        font-size: 12px;
+        font-size: 11.5px;
+        max-width: 90px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
     }
 
     .glc-count-badge {
-        font-size: 9.5px;
-        padding: 1px 4px;
+        font-size: 9px;
+        padding: 1px 3px;
+        min-width: 20px;
+        text-align: center;
+    }
+
+    .glc-expand-btn {
+        width: 20px;
+        height: 20px;
+        font-size: 10px;
     }
 
     /* 2. 우측 상단 지도 컨트롤러 툴바 컴팩트화 */
@@ -10420,6 +10433,312 @@ body.theme-navy .gis-block-tooltip {
 }
 body.theme-navy .gis-block-tooltip::before {
     border-top-color: rgba(15, 23, 42, 0.95) !important;
+}
+
+/* ======================================================== */
+/* 관망도 맵 라벨 스타일 (블록명, 시설물명, 관라벨)         */
+/* ======================================================== */
+.gis-div-label-container {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    pointer-events: none !important;
+}
+
+.gis-map-label {
+    display: inline-block;
+    white-space: nowrap;
+    user-select: none;
+    pointer-events: none;
+    line-height: 1.2;
+    text-align: center;
+    transform: translate(-50%, -50%);
+    transition: all 0.15s ease;
+}
+
+/* 블록명 라벨 */
+.gis-map-label-block {
+    font-weight: 800;
+    color: #1E293B;
+    background: rgba(255, 255, 255, 0.90);
+    border: 1.5px solid rgba(148, 163, 184, 0.6);
+    border-radius: 4px;
+    padding: 2px 6px;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
+    text-shadow: 0 0 2px #FFFFFF;
+    letter-spacing: -0.3px;
+}
+
+.gis-map-label-block.active-block-label {
+    background: #4F46E5 !important;
+    color: #FFFFFF !important;
+    border-color: #3730A3 !important;
+    box-shadow: 0 0 10px rgba(79, 70, 229, 0.6) !important;
+    text-shadow: none !important;
+    font-weight: 900 !important;
+    z-index: 999 !important;
+}
+
+/* 시설물명 라벨 (정수·배수지, 가압장, 유량계) */
+.gis-map-label-facility {
+    font-weight: 700;
+    padding: 2px 5px;
+    border-radius: 4px;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.22);
+    text-shadow: 0 0 2px #FFFFFF;
+}
+
+.gis-map-label-res {
+    color: #0369A1;
+    background: rgba(255, 255, 255, 0.93);
+    border: 1px solid #38BDF8;
+}
+
+.gis-map-label-bst {
+    color: #C2410C;
+    background: rgba(255, 255, 255, 0.93);
+    border: 1px solid #FB923C;
+}
+
+.gis-map-label-meter {
+    color: #047857;
+    background: rgba(255, 255, 255, 0.93);
+    border: 1px solid #34D399;
+}
+
+/* 다크 테마 지원 */
+body.theme-navy .gis-map-label-block {
+    color: #F1F5F9;
+    background: rgba(30, 41, 59, 0.92);
+    border-color: #475569;
+    text-shadow: 0 0 2px #0F172A;
+}
+
+body.theme-navy .gis-map-label-res {
+    color: #38BDF8;
+    background: rgba(15, 23, 42, 0.93);
+    border-color: #0284C7;
+    text-shadow: 0 0 2px #000;
+}
+
+body.theme-navy .gis-map-label-bst {
+    color: #FB923C;
+    background: rgba(15, 23, 42, 0.93);
+    border-color: #EA580C;
+    text-shadow: 0 0 2px #000;
+}
+
+body.theme-navy .gis-map-label-meter {
+    color: #34D399;
+    background: rgba(15, 23, 42, 0.93);
+    border-color: #059669;
+    text-shadow: 0 0 2px #000;
+}
+
+/* ======================================================== */
+/* 관망 레이어 롱프레스 라벨 설정 모달 (모바일/데스크탑)       */
+/* ======================================================== */
+.glc-label-modal-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(15, 23, 42, 0.45);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    animation: glcModalFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes glcModalFadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.glc-label-modal {
+    background: #FFFFFF;
+    border-radius: 14px;
+    width: 100%;
+    max-width: 300px;
+    box-shadow: 0 12px 36px rgba(15, 23, 42, 0.3);
+    border: 1px solid rgba(226, 232, 240, 0.8);
+    overflow: hidden;
+    animation: glcModalPop 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes glcModalPop {
+    from { transform: scale(0.92); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
+}
+
+.glc-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 11px 14px;
+    background: #F8FAFC;
+    border-bottom: 1px solid #E2E8F0;
+}
+
+.glc-modal-title {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 13.5px;
+    font-weight: 700;
+    color: #1E293B;
+}
+
+.glc-modal-close-btn {
+    background: transparent;
+    border: none;
+    color: #94A3B8;
+    font-size: 15px;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color 0.15s, background 0.15s;
+}
+
+.glc-modal-close-btn:hover {
+    color: #0F172A;
+    background: #E2E8F0;
+}
+
+.glc-modal-body {
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.glc-modal-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.glc-modal-slider-row {
+    flex-direction: column;
+    align-items: stretch;
+    background: #F8FAFC;
+    padding: 10px;
+    border-radius: 8px;
+    border: 1px solid #F1F5F9;
+}
+
+.glc-modal-label {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: #334155;
+}
+
+.glc-modal-val {
+    font-size: 12px;
+    font-weight: 700;
+    color: #2563EB;
+}
+
+.glc-modal-slider {
+    width: 100%;
+    accent-color: #2563EB;
+    cursor: pointer;
+}
+
+/* 컴팩트 토글 스위치 */
+.glc-switch {
+    position: relative;
+    display: inline-block;
+    width: 42px;
+    height: 23px;
+}
+
+.glc-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.glc-slider-round {
+    position: absolute;
+    cursor: pointer;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background-color: #CBD5E1;
+    transition: .2s;
+    border-radius: 24px;
+}
+
+.glc-slider-round:before {
+    position: absolute;
+    content: "";
+    height: 17px;
+    width: 17px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    transition: .2s;
+    border-radius: 50%;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+}
+
+.glc-switch input:checked + .glc-slider-round {
+    background-color: #2563EB;
+}
+
+.glc-switch input:checked + .glc-slider-round:before {
+    transform: translateX(19px);
+}
+
+.glc-modal-footer {
+    padding: 9px 14px;
+    background: #F8FAFC;
+    border-top: 1px solid #E2E8F0;
+    display: flex;
+    justify-content: flex-end;
+}
+
+.glc-modal-confirm-btn {
+    background: #2563EB;
+    color: #FFFFFF;
+    border: none;
+    border-radius: 6px;
+    padding: 6px 16px;
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.glc-modal-confirm-btn:hover {
+    background: #1D4ED8;
+}
+
+/* 모달 네이비 다크 테마 */
+body.theme-navy .glc-label-modal {
+    background: #1E293B;
+    border-color: #334155;
+    color: #F8FAFC;
+}
+body.theme-navy .glc-modal-header,
+body.theme-navy .glc-modal-footer,
+body.theme-navy .glc-modal-slider-row {
+    background: #0F172A;
+    border-color: #334155;
+}
+body.theme-navy .glc-modal-title,
+body.theme-navy .glc-modal-label {
+    color: #F8FAFC;
+}
+body.theme-navy .glc-slider-round {
+    background-color: #475569;
 }
 
 

@@ -950,6 +950,35 @@ function initGisCanvasLayerClass() {
                     ctx.lineCap = 'round';
                     ctx.lineJoin = 'round';
                     ctx.stroke(pathSp);
+
+                    // 1-2. 급수관로 관경 라벨 표출 (사용자 요청: 라벨 ON 상태 & zoom >= 17)
+                    if (mm.labelVisibility && mm.labelVisibility.servicePipes && zoom >= 17) {
+                        const spLabelSize = (mm.labelSizes && mm.labelSizes.servicePipes) || 10;
+                        ctx.save();
+                        ctx.font = `bold ${spLabelSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'middle';
+                        for (let i = 0; i < len; i++) {
+                            const sp = spList[i];
+                            const dia = sp.dia || sp.d || 20;
+                            const coords = sp.coordinates || sp.c;
+                            if (!coords || coords.length < 2) continue;
+                            const midIdx = Math.floor(coords.length / 2);
+                            const pt1 = map.latLngToContainerPoint(coords[midIdx - 1]);
+                            const pt2 = map.latLngToContainerPoint(coords[midIdx]);
+                            const distSq = (pt2.x - pt1.x) * (pt2.x - pt1.x) + (pt2.y - pt1.y) * (pt2.y - pt1.y);
+                            if (distSq < 500) continue;
+                            const mx = (pt1.x + pt2.x) / 2;
+                            const my = (pt1.y + pt2.y) / 2;
+                            const labelText = 'D' + dia;
+                            ctx.lineWidth = 2.5;
+                            ctx.strokeStyle = 'rgba(255, 255, 255, 0.95)';
+                            ctx.strokeText(labelText, mx, my);
+                            ctx.fillStyle = '#0E7490';
+                            ctx.fillText(labelText, mx, my);
+                        }
+                        ctx.restore();
+                    }
                 }
             }
 
@@ -1065,6 +1094,35 @@ function initGisCanvasLayerClass() {
                         ctx.lineJoin = 'round';
                         ctx.setLineDash([]);
                         ctx.stroke(path250);
+                    }
+
+                    // 3-4. 상수관로 (LM) 관경 라벨 표출 (사용자 요청: 라벨 ON 상태 & zoom >= 15)
+                    if (mm.labelVisibility && mm.labelVisibility.pipesLm && zoom >= 15) {
+                        const pipeLabelSize = (mm.labelSizes && mm.labelSizes.pipesLm) || 11;
+                        ctx.save();
+                        ctx.font = `bold ${pipeLabelSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'middle';
+                        for (let i = 0; i < len; i++) {
+                            const p = lmList[i];
+                            const dia = p.dia || p.d || 100;
+                            const coords = p.coordinates || p.c;
+                            if (!coords || coords.length < 2) continue;
+                            const midIdx = Math.floor(coords.length / 2);
+                            const pt1 = map.latLngToContainerPoint(coords[midIdx - 1]);
+                            const pt2 = map.latLngToContainerPoint(coords[midIdx]);
+                            const distSq = (pt2.x - pt1.x) * (pt2.x - pt1.x) + (pt2.y - pt1.y) * (pt2.y - pt1.y);
+                            if (distSq < 700) continue;
+                            const mx = (pt1.x + pt2.x) / 2;
+                            const my = (pt1.y + pt2.y) / 2;
+                            const labelText = 'D' + dia;
+                            ctx.lineWidth = 3;
+                            ctx.strokeStyle = 'rgba(255, 255, 255, 0.95)';
+                            ctx.strokeText(labelText, mx, my);
+                            ctx.fillStyle = dia > 250 ? '#991B1B' : '#1D4ED8';
+                            ctx.fillText(labelText, mx, my);
+                        }
+                        ctx.restore();
                     }
                 }
             }
@@ -1252,6 +1310,49 @@ class WaterMapManager {
                 reservoirs: 24
             }
         };
+
+        // 사용자 요청: 관망도 레이어 라벨(명칭/관라벨) On/Off 및 크기 설정
+        this.labelLayers = {
+            blocks: null,
+            reservoirs: null,
+            boosters: null,
+            meters: null
+        };
+        this.labelVisibility = {
+            blocks: true,      // 사용자 요청: 블록경계는 기본 켰을 때 라벨과 레이어가 켜져있는 상태로 시작
+            reservoirs: false,
+            boosters: false,
+            meters: false,
+            pipesLm: false,
+            servicePipes: false
+        };
+        this.labelSizes = {
+            blocks: 13,
+            reservoirs: 12,
+            boosters: 12,
+            meters: 11,
+            pipesLm: 11,
+            servicePipes: 10
+        };
+        this._activeModalLayer = null;
+
+        try {
+            const savedBlocks = localStorage.getItem('gis_label_vis_blocks');
+            if (savedBlocks !== null) {
+                this.labelVisibility.blocks = (savedBlocks === 'true');
+            }
+            ['reservoirs', 'boosters', 'meters', 'pipesLm', 'servicePipes'].forEach(k => {
+                const s = localStorage.getItem(`gis_label_vis_${k}`);
+                if (s !== null) this.labelVisibility[k] = (s === 'true');
+            });
+            Object.keys(this.labelSizes).forEach(k => {
+                const s = localStorage.getItem(`gis_label_size_${k}`);
+                if (s) {
+                    const parsed = parseFloat(s);
+                    if (!isNaN(parsed) && parsed > 0) this.labelSizes[k] = parsed;
+                }
+            });
+        } catch (e) {}
         this.activeBlock = 'ALL';
         this.currentWorkMode = 'ALL'; // ALL, VALVE_SURVEY, METER_SURVEY, PRESSURE_SURVEY, LEAK_SURVEY
 
@@ -1375,6 +1476,17 @@ class WaterMapManager {
         this.layers.pressures = L.featureGroup().addTo(this.map);
         this.layers.leaks = L.featureGroup().addTo(this.map);
         this.layers.verification = L.featureGroup().addTo(this.map);
+
+        // 관망도 라벨 레이어 그룹 등록 (블록경계 라벨은 기본 켜진 상태로 시작)
+        this.labelLayers = {
+            blocks: L.featureGroup(),
+            reservoirs: L.featureGroup(),
+            boosters: L.featureGroup(),
+            meters: L.featureGroup()
+        };
+        if (this.labelVisibility.blocks) {
+            this.labelLayers.blocks.addTo(this.map);
+        }
 
         this.initGisLayerControl();
 
@@ -2139,6 +2251,25 @@ class WaterMapManager {
         this.layers.valves.clearLayers();
         this.layers.highlight.clearLayers();
 
+        // 라벨 레이어 초기화
+        if (!this.labelLayers) {
+            this.labelLayers = {
+                blocks: L.featureGroup(),
+                reservoirs: L.featureGroup(),
+                boosters: L.featureGroup(),
+                meters: L.featureGroup()
+            };
+        } else {
+            if (!this.labelLayers.blocks) this.labelLayers.blocks = L.featureGroup();
+            if (!this.labelLayers.reservoirs) this.labelLayers.reservoirs = L.featureGroup();
+            if (!this.labelLayers.boosters) this.labelLayers.boosters = L.featureGroup();
+            if (!this.labelLayers.meters) this.labelLayers.meters = L.featureGroup();
+        }
+        this.labelLayers.blocks.clearLayers();
+        this.labelLayers.reservoirs.clearLayers();
+        this.labelLayers.boosters.clearLayers();
+        this.labelLayers.meters.clearLayers();
+
         // 캔버스 렌더러 지도 부착 보장
         if (!this.canvasRenderer || !this.map.hasLayer(this.canvasRenderer)) {
             try {
@@ -2198,6 +2329,14 @@ class WaterMapManager {
                     allBounds.extend(poly.getBounds());
                 }
             });
+
+            // 블록명 라벨 렌더링 및 지도 표출 (기본 ON)
+            this.renderBlockLabels();
+            if (this.labelVisibility.blocks && this.layerVisibility.blocks) {
+                if (!this.map.hasLayer(this.labelLayers.blocks)) {
+                    this.labelLayers.blocks.addTo(this.map);
+                }
+            }
         }
 
         // 2. 정수장 / 배수지 (44개 Point)
@@ -2213,7 +2352,7 @@ class WaterMapManager {
                         iconAnchor: [resHalf, resHalf]
                     });
                     const m = L.marker([res.lat, res.lng], { icon: icon });
-                    m.bindTooltip(`<b>${res.name}</b><br>유형: 정수·배수지`, { sticky: true });
+                    m.bindTooltip(`<b>${res.name}</b>`, { sticky: true });
                     m.on('click', () => {
                         this.onFacilitySelect({ ...res, category: '배수지', facilityType: 'RESERVOIR' });
                     });
@@ -2221,6 +2360,14 @@ class WaterMapManager {
                     allBounds.extend([res.lat, res.lng]);
                 }
             });
+
+            // 정수·배수지 시설물명 라벨 렌더링
+            this.renderReservoirLabels();
+            if (this.labelVisibility.reservoirs && this.layerVisibility.reservoirs) {
+                if (!this.map.hasLayer(this.labelLayers.reservoirs)) {
+                    this.labelLayers.reservoirs.addTo(this.map);
+                }
+            }
         }
 
         // 3. 가압장 (63개 Point)
@@ -2236,7 +2383,7 @@ class WaterMapManager {
                         iconAnchor: [bstHalf, bstHalf]
                     });
                     const m = L.marker([bst.lat, bst.lng], { icon: icon });
-                    m.bindTooltip(`<b>${bst.name}</b><br>유형: 상수도 가압장`, { sticky: true });
+                    m.bindTooltip(`<b>${bst.name}</b>`, { sticky: true });
                     m.on('click', () => {
                         this.onFacilitySelect({ ...bst, category: '가압장', facilityType: 'BOOSTER' });
                     });
@@ -2244,6 +2391,14 @@ class WaterMapManager {
                     allBounds.extend([bst.lat, bst.lng]);
                 }
             });
+
+            // 가압장 명칭 라벨 렌더링
+            this.renderBoosterLabels();
+            if (this.labelVisibility.boosters && this.layerVisibility.boosters) {
+                if (!this.map.hasLayer(this.labelLayers.boosters)) {
+                    this.labelLayers.boosters.addTo(this.map);
+                }
+            }
         }
 
         // 4. 구역유량계 (326개 Point)
@@ -2260,7 +2415,7 @@ class WaterMapManager {
                         opacity: 1,
                         fillOpacity: 0.95
                     });
-                    m.bindTooltip(`<b>${flw.name}</b><br>유형: 구역 유량계`, { sticky: true });
+                    m.bindTooltip(`<b>${flw.name}</b>`, { sticky: true });
                     m.on('click', () => {
                         this.onFacilitySelect({ ...flw, category: '유량계', facilityType: 'FLOW_METER' });
                     });
@@ -2268,6 +2423,14 @@ class WaterMapManager {
                     allBounds.extend([flw.lat, flw.lng]);
                 }
             });
+
+            // 구역유량계 블록유량계명 라벨 렌더링
+            this.renderMeterLabels();
+            if (this.labelVisibility.meters && this.layerVisibility.meters) {
+                if (!this.map.hasLayer(this.labelLayers.meters)) {
+                    this.labelLayers.meters.addTo(this.map);
+                }
+            }
         }
 
         // 5~9. 공간 격자 색인 인스턴스 구축 및 시설물 고속 색인화 (관로·밸브·수용가 210,000개 전수)
@@ -2558,6 +2721,115 @@ class WaterMapManager {
 
         // 초기 소분류 체크 상태에 따른 상위 체크박스 동기화
         ['valves', 'billing', 'pipesLm'].forEach(grp => this.syncParentCheckboxState(grp));
+
+        // 7. 레이어 롱프레스(꾹 누르기) 및 우클릭(컨텍스트) 감지 -> 라벨 설정 팝업 호출
+        const targetLabelLayers = ['blocks', 'reservoirs', 'boosters', 'meters', 'pipesLm', 'servicePipes'];
+        const layerRows = panel.querySelectorAll('.glc-layer-row');
+        layerRows.forEach(row => {
+            const chk = row.querySelector('.glc-checkbox');
+            const layerKey = chk ? chk.dataset.layer : null;
+            if (!layerKey || !targetLabelLayers.includes(layerKey)) return;
+
+            let touchTimer = null;
+            let startX = 0, startY = 0;
+            let longPressed = false;
+
+            row.addEventListener('touchstart', (e) => {
+                if (e.target.closest('.glc-checkbox') || e.target.closest('.glc-expand-btn')) return;
+                const t = e.touches[0];
+                startX = t.clientX;
+                startY = t.clientY;
+                longPressed = false;
+                touchTimer = setTimeout(() => {
+                    longPressed = true;
+                    if (navigator.vibrate) {
+                        try { navigator.vibrate(40); } catch (err) {}
+                    }
+                    this.openLabelSettingsModal(layerKey);
+                }, 450);
+            }, { passive: true });
+
+            row.addEventListener('touchmove', (e) => {
+                if (!touchTimer) return;
+                const t = e.touches[0];
+                if (Math.hypot(t.clientX - startX, t.clientY - startY) > 8) {
+                    clearTimeout(touchTimer);
+                    touchTimer = null;
+                }
+            }, { passive: true });
+
+            row.addEventListener('touchend', (e) => {
+                if (touchTimer) {
+                    clearTimeout(touchTimer);
+                    touchTimer = null;
+                }
+                if (longPressed) {
+                    e.preventDefault();
+                }
+            });
+
+            row.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.openLabelSettingsModal(layerKey);
+            });
+        });
+
+        // 8. 서브패널 내부 라벨 체크박스 & 라벨 크기 슬라이더 바인딩
+        const labelCheckboxes = panel.querySelectorAll('.glc-label-chk');
+        labelCheckboxes.forEach(chk => {
+            const layerKey = chk.dataset.layer;
+            if (!layerKey) return;
+            chk.checked = !!this.labelVisibility[layerKey];
+            chk.addEventListener('change', (e) => {
+                this.toggleLayerLabel(layerKey, e.target.checked);
+            });
+        });
+
+        const labelSliders = panel.querySelectorAll('.glc-label-slider');
+        labelSliders.forEach(slider => {
+            const layerKey = slider.dataset.layer;
+            if (!layerKey) return;
+            const curSize = this.labelSizes[layerKey] || 12;
+            slider.value = curSize;
+            const lbl = document.getElementById(`lblLabelSize_${layerKey}`);
+            if (lbl) lbl.textContent = `${curSize}px`;
+
+            slider.addEventListener('input', (e) => {
+                const val = parseFloat(e.target.value);
+                this.setLayerLabelSize(layerKey, val);
+            });
+        });
+
+        // 9. 롱프레스 라벨 설정 모달 이벤트 바인딩
+        const modalBackdrop = document.getElementById('glcLabelModalBackdrop');
+        const modalCloseBtn = document.getElementById('btnGlcModalClose');
+        const modalConfirmBtn = document.getElementById('btnGlcModalConfirm');
+        const modalToggle = document.getElementById('chkGlcModalToggle');
+        const modalSlider = document.getElementById('rngGlcModalSize');
+
+        if (modalCloseBtn) modalCloseBtn.addEventListener('click', () => this.closeLabelSettingsModal());
+        if (modalConfirmBtn) modalConfirmBtn.addEventListener('click', () => this.closeLabelSettingsModal());
+        if (modalBackdrop) {
+            modalBackdrop.addEventListener('click', (e) => {
+                if (e.target === modalBackdrop) this.closeLabelSettingsModal();
+            });
+        }
+        if (modalToggle) {
+            modalToggle.addEventListener('change', (e) => {
+                if (this._activeModalLayer) {
+                    this.toggleLayerLabel(this._activeModalLayer, e.target.checked);
+                }
+            });
+        }
+        if (modalSlider) {
+            modalSlider.addEventListener('input', (e) => {
+                if (this._activeModalLayer) {
+                    const val = parseFloat(e.target.value);
+                    this.setLayerLabelSize(this._activeModalLayer, val);
+                }
+            });
+        }
     }
 
     /**
@@ -2619,6 +2891,261 @@ class WaterMapManager {
         // 초기 소분류 체크 상태에 따른 상위 레이어 체크박스 indeterminate 상태 즉시 동기화
         this.syncParentCheckboxState('valves');
         this.syncParentCheckboxState('billing');
+    }
+
+    /**
+     * 블록경계 블록명 라벨 생성 및 렌더링
+     */
+    renderBlockLabels() {
+        if (!this.labelLayers || !this.labelLayers.blocks) return;
+        this.labelLayers.blocks.clearLayers();
+        if (!this.gisData || !this.gisData.blocks) return;
+        const size = (this.labelSizes && this.labelSizes.blocks) || 13;
+
+        this.gisData.blocks.forEach(b => {
+            if (!b.centroid && b.coordinates && b.coordinates.length > 2) {
+                let latSum = 0, lngSum = 0;
+                const n = b.coordinates.length;
+                for (let i = 0; i < n; i++) {
+                    latSum += b.coordinates[i][0];
+                    lngSum += b.coordinates[i][1];
+                }
+                b.centroid = [latSum / n, lngSum / n];
+            }
+            if (b.centroid) {
+                const icon = L.divIcon({
+                    className: 'gis-div-label-container',
+                    html: `<span class="gis-map-label gis-map-label-block" style="font-size:${size}px;" data-block="${b.name}">${b.name}</span>`,
+                    iconSize: [0, 0],
+                    iconAnchor: [0, 0]
+                });
+                const m = L.marker(b.centroid, { icon: icon, interactive: false });
+                this.labelLayers.blocks.addLayer(m);
+            }
+        });
+    }
+
+    /**
+     * 정수·배수지 시설물명 라벨 생성 및 렌더링
+     */
+    renderReservoirLabels() {
+        if (!this.labelLayers || !this.labelLayers.reservoirs) return;
+        this.labelLayers.reservoirs.clearLayers();
+        if (!this.gisData || !this.gisData.reservoirs) return;
+        const size = (this.labelSizes && this.labelSizes.reservoirs) || 12;
+
+        this.gisData.reservoirs.forEach(res => {
+            if (res.lat && res.lng) {
+                const icon = L.divIcon({
+                    className: 'gis-div-label-container',
+                    html: `<span class="gis-map-label gis-map-label-facility gis-map-label-res" style="font-size:${size}px;">${res.name}</span>`,
+                    iconSize: [0, 0],
+                    iconAnchor: [0, -14]
+                });
+                const m = L.marker([res.lat, res.lng], { icon: icon, interactive: false });
+                this.labelLayers.reservoirs.addLayer(m);
+            }
+        });
+    }
+
+    /**
+     * 가압장 명칭 라벨 생성 및 렌더링
+     */
+    renderBoosterLabels() {
+        if (!this.labelLayers || !this.labelLayers.boosters) return;
+        this.labelLayers.boosters.clearLayers();
+        if (!this.gisData || !this.gisData.boosters) return;
+        const size = (this.labelSizes && this.labelSizes.boosters) || 12;
+
+        this.gisData.boosters.forEach(bst => {
+            if (bst.lat && bst.lng) {
+                const icon = L.divIcon({
+                    className: 'gis-div-label-container',
+                    html: `<span class="gis-map-label gis-map-label-facility gis-map-label-bst" style="font-size:${size}px;">${bst.name}</span>`,
+                    iconSize: [0, 0],
+                    iconAnchor: [0, -14]
+                });
+                const m = L.marker([bst.lat, bst.lng], { icon: icon, interactive: false });
+                this.labelLayers.boosters.addLayer(m);
+            }
+        });
+    }
+
+    /**
+     * 구역유량계 블록유량계명 라벨 생성 및 렌더링
+     */
+    renderMeterLabels() {
+        if (!this.labelLayers || !this.labelLayers.meters) return;
+        this.labelLayers.meters.clearLayers();
+        if (!this.gisData || !this.gisData.flowMeters) return;
+        const size = (this.labelSizes && this.labelSizes.meters) || 11;
+
+        this.gisData.flowMeters.forEach(flw => {
+            if (flw.lat && flw.lng) {
+                const icon = L.divIcon({
+                    className: 'gis-div-label-container',
+                    html: `<span class="gis-map-label gis-map-label-facility gis-map-label-meter" style="font-size:${size}px;">${flw.name}</span>`,
+                    iconSize: [0, 0],
+                    iconAnchor: [0, -10]
+                });
+                const m = L.marker([flw.lat, flw.lng], { icon: icon, interactive: false });
+                this.labelLayers.meters.addLayer(m);
+            }
+        });
+    }
+
+    /**
+     * 개별 레이어 라벨 표출 On/Off 토글
+     */
+    toggleLayerLabel(layerKey, isVisible) {
+        this.labelVisibility[layerKey] = isVisible;
+        try {
+            localStorage.setItem(`gis_label_vis_${layerKey}`, isVisible ? 'true' : 'false');
+        } catch (e) {}
+
+        // 1. 포인트 및 폴리곤 라벨 레이어 처리
+        if (this.labelLayers && this.labelLayers[layerKey] && this.map) {
+            if (isVisible && this.layerVisibility[layerKey]) {
+                if (!this.map.hasLayer(this.labelLayers[layerKey])) {
+                    this.map.addLayer(this.labelLayers[layerKey]);
+                }
+            } else {
+                if (this.map.hasLayer(this.labelLayers[layerKey])) {
+                    this.map.removeLayer(this.labelLayers[layerKey]);
+                }
+            }
+        }
+
+        // 2. 캔버스 기반 관로 라벨
+        if (layerKey === 'pipesLm' || layerKey === 'servicePipes') {
+            if (this.gisCanvasLayer) this.gisCanvasLayer.redraw();
+        }
+
+        // 3. 서브패널 체크박스 상태 동기화
+        const chk = document.getElementById(`chkLabel_${layerKey}`);
+        if (chk && chk.checked !== isVisible) {
+            chk.checked = isVisible;
+        }
+
+        // 4. 모달창 열려있을 때 모달창 토글 동기화
+        if (this._activeModalLayer === layerKey) {
+            const modalChk = document.getElementById('chkGlcModalToggle');
+            if (modalChk && modalChk.checked !== isVisible) modalChk.checked = isVisible;
+        }
+    }
+
+    /**
+     * 개별 레이어 라벨 폰트 크기 조절
+     */
+    setLayerLabelSize(layerKey, size) {
+        const numSize = parseFloat(size);
+        if (isNaN(numSize) || numSize <= 0) return;
+        this.labelSizes[layerKey] = numSize;
+        try {
+            localStorage.setItem(`gis_label_size_${layerKey}`, numSize.toString());
+        } catch (e) {}
+
+        if (layerKey === 'blocks') {
+            document.querySelectorAll('.gis-map-label-block').forEach(el => {
+                el.style.fontSize = `${numSize}px`;
+            });
+        } else if (layerKey === 'reservoirs') {
+            document.querySelectorAll('.gis-map-label-res').forEach(el => {
+                el.style.fontSize = `${numSize}px`;
+            });
+        } else if (layerKey === 'boosters') {
+            document.querySelectorAll('.gis-map-label-bst').forEach(el => {
+                el.style.fontSize = `${numSize}px`;
+            });
+        } else if (layerKey === 'meters') {
+            document.querySelectorAll('.gis-map-label-meter').forEach(el => {
+                el.style.fontSize = `${numSize}px`;
+            });
+        } else if (layerKey === 'pipesLm' || layerKey === 'servicePipes') {
+            if (this.gisCanvasLayer) this.gisCanvasLayer.redraw();
+        }
+
+        // 서브패널 슬라이더 및 수치 동기화
+        const subSlider = document.querySelector(`.glc-label-slider[data-layer="${layerKey}"]`);
+        if (subSlider && parseFloat(subSlider.value) !== numSize) {
+            subSlider.value = numSize;
+        }
+        const subLbl = document.getElementById(`lblLabelSize_${layerKey}`);
+        if (subLbl) subLbl.textContent = `${numSize}px`;
+
+        // 모달창 동기화
+        if (this._activeModalLayer === layerKey) {
+            const modalSlider = document.getElementById('rngGlcModalSize');
+            if (modalSlider && parseFloat(modalSlider.value) !== numSize) modalSlider.value = numSize;
+            const modalVal = document.getElementById('lblGlcModalSize');
+            if (modalVal) modalVal.textContent = `${numSize}px`;
+        }
+    }
+
+    /**
+     * 롱프레스 라벨 설정 모달창 열기
+     */
+    openLabelSettingsModal(layerKey) {
+        const layerNames = {
+            blocks: '블록경계',
+            reservoirs: '정수·배수지',
+            boosters: '가압장',
+            meters: '구역유량계',
+            pipesLm: '상수관로 (LM)',
+            servicePipes: '급수관로'
+        };
+        const labelNames = {
+            blocks: '블록명',
+            reservoirs: '시설물명',
+            boosters: '명칭',
+            meters: '유량계명',
+            pipesLm: '관라벨 (D관경)',
+            servicePipes: '관라벨 (D관경)'
+        };
+        const sizeRanges = {
+            blocks: { min: 10, max: 22 },
+            reservoirs: { min: 10, max: 20 },
+            boosters: { min: 10, max: 20 },
+            meters: { min: 9, max: 18 },
+            pipesLm: { min: 9, max: 18 },
+            servicePipes: { min: 8, max: 16 }
+        };
+
+        if (!layerNames[layerKey]) return;
+        this._activeModalLayer = layerKey;
+
+        const backdrop = document.getElementById('glcLabelModalBackdrop');
+        const titleEl = document.getElementById('glcModalLayerName');
+        const descEl = document.getElementById('glcModalLabelDesc');
+        const chk = document.getElementById('chkGlcModalToggle');
+        const slider = document.getElementById('rngGlcModalSize');
+        const sizeVal = document.getElementById('lblGlcModalSize');
+
+        if (titleEl) titleEl.textContent = layerNames[layerKey];
+        if (descEl) descEl.textContent = `라벨 표시 (${labelNames[layerKey]})`;
+
+        const isVis = this.labelVisibility[layerKey] !== undefined ? this.labelVisibility[layerKey] : false;
+        if (chk) chk.checked = isVis;
+
+        const curSize = this.labelSizes[layerKey] || 12;
+        const range = sizeRanges[layerKey] || { min: 8, max: 20 };
+        if (slider) {
+            slider.min = range.min;
+            slider.max = range.max;
+            slider.value = curSize;
+        }
+        if (sizeVal) sizeVal.textContent = `${curSize}px`;
+
+        if (backdrop) backdrop.style.display = 'flex';
+    }
+
+    /**
+     * 롱프레스 라벨 설정 모달창 닫기
+     */
+    closeLabelSettingsModal() {
+        const backdrop = document.getElementById('glcLabelModalBackdrop');
+        if (backdrop) backdrop.style.display = 'none';
+        this._activeModalLayer = null;
     }
 
     /**
@@ -2705,6 +3232,19 @@ class WaterMapManager {
                 }
             }
         }
+
+        // 라벨 레이어 연동: 상위 레이어가 꺼지면 라벨도 제거, 켜지면 라벨 설정이 ON인 경우만 표출
+        if (this.labelLayers && this.labelLayers[layerKey] && this.map) {
+            if (isVisible && this.labelVisibility && this.labelVisibility[layerKey]) {
+                if (!this.map.hasLayer(this.labelLayers[layerKey])) {
+                    this.map.addLayer(this.labelLayers[layerKey]);
+                }
+            } else {
+                if (this.map.hasLayer(this.labelLayers[layerKey])) {
+                    this.map.removeLayer(this.labelLayers[layerKey]);
+                }
+            }
+        }
     }
 
     /**
@@ -2750,6 +3290,16 @@ class WaterMapManager {
                     this.map.addLayer(layerGroup);
                 } else if (!isVis && this.map.hasLayer(layerGroup)) {
                     this.map.removeLayer(layerGroup);
+                }
+            }
+
+            // 라벨 레이어도 지도 동기화
+            if (this.labelLayers && this.labelLayers[k] && this.map) {
+                const labelVis = !!(this.labelVisibility && this.labelVisibility[k]);
+                if (isVis && labelVis && !this.map.hasLayer(this.labelLayers[k])) {
+                    this.map.addLayer(this.labelLayers[k]);
+                } else if ((!isVis || !labelVis) && this.map.hasLayer(this.labelLayers[k])) {
+                    this.map.removeLayer(this.labelLayers[k]);
                 }
             }
         });
@@ -3090,6 +3640,9 @@ class WaterMapManager {
         if (this.layers.valves) this.layers.valves.clearLayers();
         if (this.layers.meters) this.layers.meters.clearLayers();
         if (this.layers.highlight) this.layers.highlight.clearLayers();
+        if (this.labelLayers) {
+            Object.values(this.labelLayers).forEach(grp => grp && grp.clearLayers && grp.clearLayers());
+        }
         if (this.gisCanvasLayer) this.gisCanvasLayer.redraw();
         this.gisData = null;
         this.gisDataLoaded = false;
@@ -3113,6 +3666,16 @@ class WaterMapManager {
         const blockSelect = document.getElementById('blockSelect');
         if (blockSelect) blockSelect.value = blockName;
         this.activeBlock = blockName;
+
+        // 블록명 맵 라벨 하이라이트 동기화
+        document.querySelectorAll('.gis-map-label-block').forEach(el => {
+            if (el.dataset.block === blockName) {
+                el.classList.add('active-block-label');
+            } else {
+                el.classList.remove('active-block-label');
+            }
+        });
+
         if (this.layers.blocks) {
             const blockWeight = (this.symbolSizes && this.symbolSizes.facilities && this.symbolSizes.facilities.blocks) || 2.2;
             const blockOpacity = (this.symbolSizes && this.symbolSizes.facilities && this.symbolSizes.facilities.blockOpacity) || 0.24;
@@ -3152,6 +3715,16 @@ class WaterMapManager {
 
     filterByBlock(blockCode) {
         this.activeBlock = blockCode;
+
+        // 블록명 맵 라벨 하이라이트 동기화
+        if (blockCode === 'ALL') {
+            document.querySelectorAll('.gis-map-label-block').forEach(el => el.classList.remove('active-block-label'));
+        } else {
+            document.querySelectorAll('.gis-map-label-block').forEach(el => {
+                el.classList.toggle('active-block-label', el.dataset.block === blockCode);
+            });
+        }
+
         if (this.gisDataLoaded && this.layers.blocks) {
             const blockWeight = (this.symbolSizes && this.symbolSizes.facilities && this.symbolSizes.facilities.blocks) || 2.2;
             const blockOpacity = (this.symbolSizes && this.symbolSizes.facilities && this.symbolSizes.facilities.blockOpacity) || 0.24;
