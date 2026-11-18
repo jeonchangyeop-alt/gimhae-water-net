@@ -23,7 +23,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1"></script>
     <!-- 커스텀 스타일 -->
-    <link rel="stylesheet" href="css/style.css?v=20261118A">
+    <link rel="stylesheet" href="css/style.css?v=20261118C">
 </head>
 <body>
 
@@ -1470,7 +1470,7 @@
                             </div>
                             <div class="vsm-input-group">
                                 <i class="fa-solid fa-magnifying-glass vsm-input-icon"></i>
-                                <input type="text" id="vworldAddressInput" class="vsm-input" placeholder="주소, 시설물(가압장·배수지·밸브·계량기), 관망 블록명 검색..." autocomplete="off" spellcheck="false">
+                                <input type="text" id="vworldAddressInput" class="vsm-input" placeholder="주소(도로명/지번), 가압장, 배수지, 관망블록명 검색..." autocomplete="off" spellcheck="false">
                                 <button type="button" id="btnVworldClear" class="vsm-clear-btn" style="display:none;" title="검색어 지우기">
                                     <i class="fa-solid fa-xmark"></i>
                                 </button>
@@ -1481,17 +1481,6 @@
                             <button type="button" id="btnVsmClose" class="vsm-close-btn" title="닫기 (ESC)">
                                 <i class="fa-solid fa-xmark"></i>
                             </button>
-                        </div>
-
-                        <!-- 빠른 추천 주소 및 시설물 칩 (원클릭 검색) -->
-                        <div class="vworld-quick-chips" id="vworldQuickChips">
-                            <span class="vchip-title"><i class="fa-solid fa-bolt"></i> 빠른 검색:</span>
-                            <button type="button" class="vchip" data-query="삼계가압장"><i class="fa-solid fa-bolt-lightning"></i> 삼계가압장</button>
-                            <button type="button" class="vchip" data-query="구산가압장"><i class="fa-solid fa-bolt-lightning"></i> 구산가압장</button>
-                            <button type="button" class="vchip" data-query="구산3"><i class="fa-solid fa-cubes"></i> 구산3(블록)</button>
-                            <button type="button" class="vchip" data-query="삼계배수지"><i class="fa-solid fa-water"></i> 삼계배수지</button>
-                            <button type="button" class="vchip" data-query="김해대로 2401">김해대로 2401</button>
-                            <button type="button" class="vchip" data-query="김해시청">김해시청</button>
                         </div>
                     </div>
 
@@ -2859,7 +2848,7 @@
 <script src="js/offlineStore.js?v=20261112f"></script>
 <!-- 김해시 실제 관망 GIS 공간데이터셋 (WGS84 변환) -->
 <script src="data/gimhae_gis_dataset.js?v=20261117B"></script>
-<script src="js/map.js?v=20261118B"></script>
+<script src="js/map.js?v=20261118C"></script>
 <!-- 수용가 부과량 데이터 (file:// 환경 CORS 차단 방지 및 고속 로드) -->
 <script defer src="data/consumer_charge_data.js"></script>
 <!-- 1. 유량 및 유수율 관리(수정작업) 100% 검증 기준 데이터셋 -->
@@ -2869,7 +2858,7 @@
 <script src="js/targetManager.js?v=20261113Q"></script>
 <!-- 9. 기준 및 근거 AI 어시스턴트 (노트북LM Grounded Engine) -->
 <script src="js/standardsLm.js?v=20261113Q"></script>
-<script src="js/app.js?v=20261118A"></script>
+<script src="js/app.js?v=20261118C"></script>
 
 <script>
     // 카카오톡 인앱 브라우저 감지 시 안내 및 크롬 전환

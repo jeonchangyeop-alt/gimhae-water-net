@@ -3064,132 +3064,248 @@ class WaterMapManager {
     // =========================================================================
 
     /**
-     * 주소 검색 통합 엔진 (VWorld Search 2.0 API + 김해 GIS 전역 색인 병합)
+     * 주소 검색 통합 엔진 (김해 GIS 8종 전 시설물 색인 + VWorld Search 2.0 API 병합)
      */
     async searchAddress(query) {
         const q = (query || '').trim();
         if (!q) return [];
 
         const cleanQ = q.toLowerCase().replace(/\s+/g, '');
+        const gis = this.gisData || window.GIMHAE_GIS_DATA || {};
 
-        // 1. 김해 GIS 전역 상세 색인에서 즉시 1차 검색 (0ms 응답, 무결점 신뢰도)
-        const localMatches = GIMHAE_GIS_INDEX.filter(item => {
-            const titleMatch = (item.title || '').toLowerCase().replace(/\s+/g, '').includes(cleanQ);
-            const roadMatch = (item.road || '').toLowerCase().replace(/\s+/g, '').includes(cleanQ);
-            const parcelMatch = (item.parcel || '').toLowerCase().replace(/\s+/g, '').includes(cleanQ);
-            const blockMatch = (item.block || '').toLowerCase().replace(/\s+/g, '').includes(cleanQ);
-            return titleMatch || roadMatch || parcelMatch || blockMatch;
-        }).map(item => ({
-            ...item,
-            source: '김해 GIS 색인'
-        }));
+        const results = [];
+        const seen = new Set();
 
-        // 2-1. 관망 등록 시설물(제수변, 계량기, 수압점, 누수점) 일치 검색
-        const facilityMatches = [];
-        const checkList = [
-            ...(window.SAMPLE_VALVES || []).map(f => ({ ...f, category: '경계제수변' })),
-            ...(window.SAMPLE_METERS || []).map(f => ({ ...f, category: '수용가계량기' })),
-            ...(window.SAMPLE_PRESSURE_POINTS || []).map(f => ({ ...f, category: '수압측정점' })),
-            ...(window.SAMPLE_LEAK_POINTS || []).map(f => ({ ...f, category: '누수탐사점' }))
-        ];
-
-        checkList.forEach(fac => {
-            const nameMatch = (fac.name || '').toLowerCase().replace(/\s+/g, '').includes(cleanQ);
-            const idMatch = (fac.id || '').toLowerCase().replace(/\s+/g, '').includes(cleanQ);
-            const addrMatch = (fac.address || '').toLowerCase().replace(/\s+/g, '').includes(cleanQ);
-            if (nameMatch || idMatch || addrMatch) {
-                facilityMatches.push({
-                    title: `[${fac.category}] ${fac.name}`,
-                    category: fac.category,
-                    road: fac.address || '도로상 위치',
-                    parcel: fac.address || '',
-                    lat: fac.lat,
-                    lng: fac.lng,
-                    block: fac.block,
-                    system: '현장시설',
-                    facilityType: fac.type || (fac.category === '경계제수변' ? 'VALVE' : (fac.category === '수용가계량기' ? 'METER' : (fac.category === '수압측정점' ? 'PRESSURE' : 'LEAK'))),
-                    facilityId: fac.id,
-                    source: '관망시설대장'
-                });
+        const addResult = (item) => {
+            if (!item) return;
+            const latVal = typeof item.lat === 'number' ? item.lat : parseFloat(item.lat);
+            const lngVal = typeof item.lng === 'number' ? item.lng : parseFloat(item.lng);
+            const key = `${item.facilityType || ''}_${item.facilityId || ''}_${Math.round(latVal * 10000)}_${Math.round(lngVal * 10000)}_${item.title}`;
+            if (!seen.has(key)) {
+                seen.add(key);
+                results.push({ ...item, lat: latVal, lng: lngVal });
             }
-        });
+        };
 
-        // 2-2. 관로(Pipes) DB 검색
-        if (window.SAMPLE_PIPES) {
-            window.SAMPLE_PIPES.forEach(p => {
-                const nameMatch = (p.name || '').toLowerCase().replace(/\s+/g, '').includes(cleanQ);
-                const idMatch = (p.id || '').toLowerCase().replace(/\s+/g, '').includes(cleanQ);
-                const matMatch = (p.material || '').toLowerCase().replace(/\s+/g, '').includes(cleanQ);
-                if (nameMatch || idMatch || matMatch) {
-                    const midCoord = p.coordinates && p.coordinates.length > 0 ? p.coordinates[Math.floor(p.coordinates.length / 2)] : [35.2285, 128.8893];
-                    facilityMatches.push({
-                        title: `[관로] ${p.name}`,
-                        category: '상수도관로',
-                        road: `${p.block} 배수구역 (D${p.dia}mm, ${p.material})`,
-                        parcel: `연장 ${p.length}m, 준공 ${p.year}년`,
-                        lat: midCoord[0],
-                        lng: midCoord[1],
-                        block: p.block,
-                        system: '배수관망',
+        // 1. 가압장 (gisData.boosters, 63개소) - e.g. "명동가압장", "삼계가압장", "구산가압장", "명동"
+        if (gis.boosters && Array.isArray(gis.boosters)) {
+            gis.boosters.forEach(bst => {
+                const name = bst.name || '';
+                const id = bst.id || '';
+                const cleanName = name.toLowerCase().replace(/\s+/g, '');
+                const cleanId = id.toLowerCase().replace(/\s+/g, '');
+                const coreName = cleanName.replace(/가압장/g, '');
+                const coreQ = cleanQ.replace(/가압장/g, '');
+
+                if (cleanName.includes(cleanQ) || cleanQ.includes(cleanName) || cleanId.includes(cleanQ) ||
+                    (coreQ.length >= 2 && (coreName.includes(coreQ) || coreQ.includes(coreName)))) {
+                    addResult({
+                        title: `[가압장] ${name}`,
+                        name: name,
+                        category: '가압장',
+                        road: bst.address || `김해시 ${name}`,
+                        parcel: `시설용량: ${bst.capacity || '-'} / 관리번호: ${id}`,
+                        lat: bst.lat,
+                        lng: bst.lng,
+                        block: bst.block || '',
+                        facilityType: 'BOOSTER',
+                        facilityId: id,
+                        facilityData: bst,
+                        source: '김해 GIS 가압장대장'
+                    });
+                }
+            });
+        }
+
+        // 2. 정수장 / 배수지 (gisData.reservoirs, 44개소) - e.g. "삼계배수지", "명동정수장", "배수지"
+        if (gis.reservoirs && Array.isArray(gis.reservoirs)) {
+            gis.reservoirs.forEach(res => {
+                const name = res.name || '';
+                const id = res.id || '';
+                const cleanName = name.toLowerCase().replace(/\s+/g, '');
+                const cleanId = id.toLowerCase().replace(/\s+/g, '');
+                const coreName = cleanName.replace(/배수지|정수장|취수장/g, '');
+                const coreQ = cleanQ.replace(/배수지|정수장|취수장/g, '');
+
+                if (cleanName.includes(cleanQ) || cleanQ.includes(cleanName) || cleanId.includes(cleanQ) ||
+                    (coreQ.length >= 2 && (coreName.includes(coreQ) || coreQ.includes(coreName)))) {
+                    const isPlant = cleanName.includes('정수') || cleanName.includes('취수');
+                    addResult({
+                        title: `[${isPlant ? '정수장' : '배수지'}] ${name}`,
+                        name: name,
+                        category: isPlant ? '정수장' : '배수지',
+                        road: res.address || `김해시 ${name}`,
+                        parcel: `시설용량: ${res.capacity || '-'} / 관리번호: ${id}`,
+                        lat: res.lat,
+                        lng: res.lng,
+                        block: res.block || '',
+                        facilityType: 'RESERVOIR',
+                        facilityId: id,
+                        facilityData: res,
+                        source: '김해 GIS 배수지대장'
+                    });
+                }
+            });
+        }
+
+        // 3. 관망블록 (gisData.blocks, 103개 구역) - e.g. "구산3", "구산3블록", "동상동", "내외", "활천"
+        if (gis.blocks && Array.isArray(gis.blocks)) {
+            gis.blocks.forEach(b => {
+                const name = b.name || '';
+                const id = b.id || '';
+                const cleanName = name.toLowerCase().replace(/\s+/g, '');
+                const cleanId = id.toLowerCase().replace(/\s+/g, '');
+                const coreName = cleanName.replace(/블록|소블록|_수정/g, '');
+                const coreQ = cleanQ.replace(/블록|소블록/g, '');
+
+                if (cleanName.includes(cleanQ) || cleanQ.includes(cleanName) || cleanId.includes(cleanQ) ||
+                    (coreQ.length >= 2 && (coreName.includes(coreQ) || coreQ.includes(coreName)))) {
+                    
+                    let centerLat = 35.2285, centerLng = 128.8893;
+                    if (b.coordinates && b.coordinates.length > 0) {
+                        let sumLat = 0, sumLng = 0;
+                        b.coordinates.forEach(c => { sumLat += c[0]; sumLng += c[1]; });
+                        centerLat = sumLat / b.coordinates.length;
+                        centerLng = sumLng / b.coordinates.length;
+                    }
+
+                    addResult({
+                        title: `[관망블록] ${name}`,
+                        name: name,
+                        category: '관망블록',
+                        road: `김해시 ${name} 관망 소블록`,
+                        parcel: `블록코드: ${id}`,
+                        lat: centerLat,
+                        lng: centerLng,
+                        block: name,
+                        isBlock: true,
+                        coordinates: b.coordinates,
+                        facilityType: 'BLOCK',
+                        facilityId: id,
+                        source: '김해 GIS 블록대장'
+                    });
+                }
+            });
+        }
+
+        // 4. 구역유량계 (gisData.flowMeters, 326개소)
+        if (gis.flowMeters && Array.isArray(gis.flowMeters)) {
+            gis.flowMeters.forEach(flw => {
+                const name = flw.name || '';
+                const id = flw.id || '';
+                const cleanName = name.toLowerCase().replace(/\s+/g, '');
+                const cleanId = id.toLowerCase().replace(/\s+/g, '');
+
+                if (cleanName.includes(cleanQ) || cleanId.includes(cleanQ)) {
+                    addResult({
+                        title: `[구역유량계] ${name || id}`,
+                        name: name || id,
+                        category: '구역유량계',
+                        road: flw.address || `김해시 구역유량계 (${id})`,
+                        parcel: `계량기 관리번호: ${id}`,
+                        lat: flw.lat,
+                        lng: flw.lng,
+                        block: flw.block || '',
+                        facilityType: 'FLOW_METER',
+                        facilityId: id,
+                        facilityData: flw,
+                        source: '김해 GIS 유량계대장'
+                    });
+                }
+            });
+        }
+
+        // 5. 밸브류 (gisData.valves, 33,358개소 중 상위 일치 10개)
+        if (gis.valves && Array.isArray(gis.valves) && cleanQ.length >= 2) {
+            let vCount = 0;
+            for (let i = 0; i < gis.valves.length && vCount < 10; i++) {
+                const v = gis.valves[i];
+                const name = v.name || '';
+                const id = v.id || '';
+                const cde = v.cde || '';
+                const cat = v.cat || '제수변';
+                const cleanName = name.toLowerCase().replace(/\s+/g, '');
+                const cleanId = id.toLowerCase().replace(/\s+/g, '');
+                const cleanCde = cde.toLowerCase().replace(/\s+/g, '');
+
+                if ((cleanName && cleanName.includes(cleanQ)) || cleanId.includes(cleanQ) || (cleanCde && cleanCde.includes(cleanQ))) {
+                    vCount++;
+                    addResult({
+                        title: `[${cat}] ${name || id}`,
+                        name: name || id,
+                        category: cat,
+                        road: v.address || `구경: ${v.dia || '-'}mm (${cde || '-'})`,
+                        parcel: `관리번호: ${id}`,
+                        lat: v.lat,
+                        lng: v.lng,
+                        block: v.block || '',
+                        facilityType: 'VALVE',
+                        facilityId: id,
+                        facilityData: v,
+                        source: '김해 GIS 밸브대장'
+                    });
+                }
+            }
+        }
+
+        // 6. 상수관로 (gisData.pipesLm / pipesLm2 중 상위 일치 8개)
+        if (cleanQ.includes('lm') || cleanQ.includes('관로') || cleanQ.includes('pipe')) {
+            const pipes = [...(gis.pipesLm || []), ...(gis.pipesLm2 || [])];
+            let pCount = 0;
+            for (let i = 0; i < pipes.length && pCount < 8; i++) {
+                const p = pipes[i];
+                const pId = (p.id || '').toLowerCase().replace(/\s+/g, '');
+                if (pId.includes(cleanQ)) {
+                    pCount++;
+                    const coords = p.coordinates || p.c || [];
+                    const mid = coords.length > 0 ? coords[Math.floor(coords.length / 2)] : [35.2285, 128.8893];
+                    addResult({
+                        title: `[상수관로] ${p.id}`,
+                        name: p.id,
+                        category: '상수관로',
+                        road: `구경 D${p.dia || '-'}mm, 재질 ${p.mat || '-'}, 연장 ${p.len || '-'}m`,
+                        parcel: `관로 ID: ${p.id}`,
+                        lat: mid[0],
+                        lng: mid[1],
+                        coordinates: coords,
                         facilityType: 'PIPE',
                         facilityId: p.id,
                         dia: p.dia,
-                        material: p.material,
-                        length: p.length,
-                        year: p.year,
-                        source: '관로대장'
+                        material: p.mat,
+                        length: p.len,
+                        source: '김해 GIS 관로대장'
                     });
                 }
-            });
-        }
-
-        // 2-3. 133개 관망 블록명 일치 검색
-        const blockMatches = [];
-        if (window.TARGET_YIELD_DICT) {
-            Object.keys(window.TARGET_YIELD_DICT).forEach(bName => {
-                const bClean = bName.toLowerCase().replace(/\s+/g, '');
-                if (bClean.includes(cleanQ) || cleanQ.includes(bClean)) {
-                    const center = this.findBlockCenter(bName);
-                    const bData = window.TARGET_YIELD_DICT[bName];
-                    blockMatches.push({
-                        title: `[관망블록] ${bName}`,
-                        category: '관망블록',
-                        road: `김해시 ${bName} 관망 소블록`,
-                        parcel: `기준유수율 ${bData.std}% | 목표유수율 ${bData.target}%`,
-                        lat: center.lat,
-                        lng: center.lng,
-                        block: bName,
-                        system: '상수도 소블록',
-                        isBlock: true,
-                        blockData: bData,
-                        source: '유수율관리대장'
-                    });
-                }
-            });
-        }
-
-        // 3. VWorld 오픈API 2.0 비동기 호출 (JSONP로 CORS 우회)
-        let vworldResults = [];
-        try {
-            vworldResults = await this.queryVWorldSearchApi(q);
-        } catch (err) {
-            console.warn('[VWorld API] 검색 중단 (로컬 사전 자동대체):', err);
-        }
-
-        // 4. 결과 병합 및 중복 제거
-        const combined = [...blockMatches, ...facilityMatches, ...localMatches, ...vworldResults];
-        const unique = [];
-        const seen = new Set();
-
-        combined.forEach(item => {
-            const key = `${Math.round(item.lat * 10000)}_${Math.round(item.lng * 10000)}_${item.title}`;
-            if (!seen.has(key)) {
-                seen.add(key);
-                unique.push(item);
             }
-        });
+        }
 
-        return unique.slice(0, 15);
+        // 7. 김해 GIS 전역 사전 색인 (주요 관공서 및 기준점)
+        if (typeof GIMHAE_GIS_INDEX !== 'undefined' && Array.isArray(GIMHAE_GIS_INDEX)) {
+            GIMHAE_GIS_INDEX.forEach(item => {
+                const titleMatch = (item.title || '').toLowerCase().replace(/\s+/g, '').includes(cleanQ);
+                const roadMatch = (item.road || '').toLowerCase().replace(/\s+/g, '').includes(cleanQ);
+                const parcelMatch = (item.parcel || '').toLowerCase().replace(/\s+/g, '').includes(cleanQ);
+                const blockMatch = (item.block || '').toLowerCase().replace(/\s+/g, '').includes(cleanQ);
+                if (titleMatch || roadMatch || parcelMatch || blockMatch) {
+                    addResult({
+                        ...item,
+                        source: '김해 GIS 색인'
+                    });
+                }
+            });
+        }
+
+        // 8. 국토교통부 VWorld 오픈API 2.0 비동기 호출 (도로명 / 지번 주소)
+        try {
+            const vworldResults = await this.queryVWorldSearchApi(q);
+            if (Array.isArray(vworldResults)) {
+                vworldResults.forEach(v => addResult(v));
+            }
+        } catch (err) {
+            console.warn('[VWorld API] 검색 중단 (로컬 GIS 색인으로 표출):', err);
+        }
+
+        return results.slice(0, 20);
     }
 
     /**
@@ -3291,16 +3407,45 @@ class WaterMapManager {
      * 주소 검색 결과 선택 시 지도 이동 및 확인 마커·버퍼·팝업 표출
      */
     verifyAndGoToLocation(item) {
-        if (!item || isNaN(item.lat) || isNaN(item.lng)) return;
+        if (!item) return;
+
+        // 1. 관망블록 선택 시: 블록 외곽선 하이라이트 및 폴리곤 영역 자동 줌
+        if (item.isBlock || item.facilityType === 'BLOCK') {
+            const blockName = item.name || item.block;
+            this.highlightBlock(blockName);
+            if (item.coordinates && item.coordinates.length > 2) {
+                try {
+                    this.map.fitBounds(item.coordinates, { padding: [40, 40], animate: true, maxZoom: 17 });
+                } catch (e) {
+                    if (!isNaN(item.lat) && !isNaN(item.lng)) {
+                        this.map.flyTo([item.lat, item.lng], 16, { duration: 1.0 });
+                    }
+                }
+            } else if (!isNaN(item.lat) && !isNaN(item.lng)) {
+                this.map.flyTo([item.lat, item.lng], 16, { duration: 1.0 });
+            }
+            if (typeof window.showLocationOnRightPanel === 'function') {
+                window.showLocationOnRightPanel(item, null, blockName);
+            }
+            return;
+        }
+
+        if (isNaN(item.lat) || isNaN(item.lng)) return;
 
         // 기존 주소 확인 마커 제거
         this.clearVerificationMarker();
 
-        const lat = item.lat;
-        const lng = item.lng;
+        const lat = typeof item.lat === 'number' ? item.lat : parseFloat(item.lat);
+        const lng = typeof item.lng === 'number' ? item.lng : parseFloat(item.lng);
 
-        // 지도 부드럽게 비행 이동 (zoom 17)
-        this.map.flyTo([lat, lng], 17, { duration: 1.2 });
+        // 시설물별 최적 확대 배율
+        let targetZoom = 17;
+        if (item.facilityType === 'BOOSTER' || item.facilityType === 'RESERVOIR') targetZoom = 18;
+        else if (item.facilityType === 'VALVE' || item.facilityType === 'METER' || item.facilityType === 'PIPE') targetZoom = 19;
+        else if (item.facilityType === 'FLOW_METER') targetZoom = 18;
+
+        // 지도 부드럽게 비행 이동
+        this.map.flyTo([lat, lng], targetZoom, { duration: 1.0 });
 
         // 1. 펄스 애니메이션 확인 핀 마커 생성
         const pinHtml = `
@@ -3322,56 +3467,13 @@ class WaterMapManager {
 
         this.verifiedMarker = L.marker([lat, lng], { icon: icon }).addTo(this.layers.verification);
 
-        // 2. 인근 시설물(100m 이내) 실시간 자동 스캔 (불투명 원 표출은 사용자 요청으로 제외하고 핀 마커만 표시)
+        // 2. 인근 시설물(100m 이내) 실시간 자동 스캔
         const nearbySummary = this.scanNearbyFacilities(lat, lng, 100);
         const matchedBlock = item.block || this.findNearestBlockName(lat, lng);
 
-        // 4. 주소 확인 상세 팝업 카드 구성 (불필요한 결과값 제거 및 가독성 최적화)
         const cleanTitle = (item.title || item.road || '선택 위치')
             .replace(/\[클릭\s*확인\]\s*/g, '')
             .trim();
-
-        const popupContent = `
-            <div class="vworld-verify-popup-card">
-                <div class="vvp-header" style="display:flex; align-items:flex-start; gap:8px;">
-                    <i class="fa-solid fa-location-dot" style="color:#2563EB; font-size:16px; margin-top:2px;"></i>
-                    <div style="flex:1;">
-                        <h4 class="vvp-title" style="margin:0; font-size:13.5px; font-weight:700; color:#0F172A; line-height:1.35;">${cleanTitle}</h4>
-                    </div>
-                </div>
-                <div class="vvp-body" style="margin-top:8px;">
-                    <div class="vvp-row">
-                        <span class="vvp-label"><i class="fa-solid fa-road" style="color:#3B82F6;"></i> 도로명주소</span>
-                        <span class="vvp-val">${item.road || cleanTitle}</span>
-                    </div>
-                    ${item.parcel && item.parcel !== item.road ? `
-                    <div class="vvp-row">
-                        <span class="vvp-label"><i class="fa-regular fa-map" style="color:#64748B;"></i> 지번주소</span>
-                        <span class="vvp-val">${item.parcel}</span>
-                    </div>` : ''}
-                    <div class="vvp-row">
-                        <span class="vvp-label"><i class="fa-solid fa-crosshairs" style="color:#10B981;"></i> GPS 좌표</span>
-                        <span class="vvp-val coordinate-copyable" onclick="window.mapManager.copyCoordToClipboard(${lat}, ${lng})" title="클릭하여 좌표 복사">
-                            ${lat.toFixed(6)}, ${lng.toFixed(6)} <i class="fa-regular fa-copy"></i>
-                        </span>
-                    </div>
-                    <div class="vvp-row">
-                        <span class="vvp-label"><i class="fa-solid fa-cubes" style="color:#8B5CF6;"></i> 소속 블록</span>
-                        <span class="vvp-val font-semibold text-primary">${matchedBlock}</span>
-                    </div>
-                </div>
-
-                <!-- 360° 로드뷰 직관적 원클릭 툴바 (단순 주소창 전용 최적화) -->
-                <div class="vvp-actions" style="margin-top:10px; padding-top:8px; border-top:1px solid #E2E8F0; display:flex; gap:6px;">
-                    <button type="button" class="btn-vvp-roadview-primary" onclick="window.mapManager.openRoadview(${lat}, ${lng}, '${cleanTitle.replace(/'/g, "\\'")}')" title="이 위치 360° 로드뷰(거리뷰) 열기">
-                        <i class="fa-solid fa-street-view"></i> 360° 로드뷰 보기
-                    </button>
-                    <button type="button" class="btn-vvp-clear-icon" onclick="window.mapManager.clearVerificationMarker()" title="확인 마커 지우기">
-                        <i class="fa-solid fa-xmark"></i>
-                    </button>
-                </div>
-            </div>
-        `;
 
         // 사용자 요청: 지도 위 팝업은 표출하지 않고 핀 마커만 표시, 모든 결과는 우측 패널에만 집중 표출
         this.verifiedMarker.on('click', () => {

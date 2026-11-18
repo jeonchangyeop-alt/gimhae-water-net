@@ -5568,18 +5568,24 @@ function initVWorldMapControls() {
                     if (item.category === '관공서' || item.category === '상수도시설') {
                         catIcon = '<i class="fa-solid fa-building-columns"></i>';
                         catClass = 'cat-office';
-                    } else if (item.category === '가압장') {
+                    } else if (item.category === '가압장' || item.facilityType === 'BOOSTER') {
                         catIcon = '<i class="fa-solid fa-bolt-lightning"></i>';
-                        catClass = 'cat-facility';
-                    } else if (item.category === '정수장' || item.category === '배수지' || item.category === '취수장') {
+                        catClass = 'cat-booster';
+                    } else if (item.category === '정수장' || item.category === '배수지' || item.category === '취수장' || item.facilityType === 'RESERVOIR') {
                         catIcon = '<i class="fa-solid fa-water"></i>';
                         catClass = 'cat-water';
-                    } else if (item.category === '경계제수변' || item.category === '수용가계량기' || item.category === '수압측정점' || item.category === '누수탐사점' || item.category === '상수도관로') {
-                        catIcon = '<i class="fa-solid fa-gear"></i>';
-                        catClass = 'cat-facility';
-                    } else if (item.category === '관망블록') {
+                    } else if (item.category === '관망블록' || item.isBlock || item.facilityType === 'BLOCK') {
                         catIcon = '<i class="fa-solid fa-cubes"></i>';
                         catClass = 'cat-block';
+                    } else if (item.category === '구역유량계' || item.facilityType === 'FLOW_METER') {
+                        catIcon = '<i class="fa-solid fa-gauge-high"></i>';
+                        catClass = 'cat-meter';
+                    } else if (['경계제수변', '제수변', '공기변', '이토변', '감압변', '안전변'].includes(item.category) || item.facilityType === 'VALVE') {
+                        catIcon = '<i class="fa-solid fa-gear"></i>';
+                        catClass = 'cat-valve';
+                    } else if (item.category === '상수도관로' || item.facilityType === 'PIPE') {
+                        catIcon = '<i class="fa-solid fa-arrows-left-right"></i>';
+                        catClass = 'cat-pipe';
                     }
 
                     return `
@@ -5590,8 +5596,8 @@ function initVWorldMapControls() {
                             <div class="vrd-item-info">
                                 <div class="vrd-item-top">
                                     <strong class="vrd-item-title">${item.title}</strong>
-                                    <span class="vrd-item-category">${item.category || '주소'}</span>
-                                    <span class="vrd-item-block">${item.block || '김해시'}</span>
+                                    <span class="vrd-item-category badge-${catClass}">${item.category || '주소'}</span>
+                                    ${item.block ? `<span class="vrd-item-block">${item.block}</span>` : ''}
                                 </div>
                                 <div class="vrd-item-addr">
                                     <i class="fa-solid fa-road" style="font-size:10.5px; color:#3B82F6;"></i> ${item.road || item.parcel || '-'}
