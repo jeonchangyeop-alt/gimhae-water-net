@@ -1246,6 +1246,7 @@ class WaterMapManager {
             },
             facilities: {
                 blocks: 2.2,
+                blockOpacity: 0.24, // 기본 24% 투명도 (사용자 요청: 20~30% 연한 투명도로 관로 가독성 확보)
                 meters: 5.5,
                 boosters: 22,
                 reservoirs: 24
@@ -1971,6 +1972,139 @@ class WaterMapManager {
     }
 
     /**
+     * 103개 관망 블록 인접성(Adjacency) 분석 및 인접 블록 간 상이한 대비 색상 자동 배정 (카토그래픽 4색 정리 알고리즘)
+     * 인접 블록끼리는 절대 같은 색상이 중복되지 않도록 14종의 고대비 조화 팔레트 자동 배정
+     */
+    assignBlockColors(blocks) {
+        if (!blocks || !Array.isArray(blocks) || blocks.length === 0) return;
+
+        // 고대비 프리미엄 GIS 카토그래픽 팔레트 (14색)
+        // 인접한 블록이 시각적으로 즉각 구분되면서도 관로(파랑, 빨강)를 방해하지 않는 산뜻한 톤
+        const PALETTE = [
+            { fill: '#8B5CF6', border: '#6D28D9', name: '바이올렛' },
+            { fill: '#10B981', border: '#047857', name: '에메랄드' },
+            { fill: '#F59E0B', border: '#B45309', name: '앰버골드' },
+            { fill: '#EC4899', border: '#BE185D', name: '핑크' },
+            { fill: '#06B6D4', border: '#0E7490', name: '시안' },
+            { fill: '#F97316', border: '#C2410C', name: '오렌지' },
+            { fill: '#6366F1', border: '#4338CA', name: '인디고' },
+            { fill: '#84CC16', border: '#4D7C0F', name: '라임연두' },
+            { fill: '#14B8A6', border: '#0F766E', name: '틸민트' },
+            { fill: '#E11D48', border: '#9F1239', name: '로즈진홍' },
+            { fill: '#3B82F6', border: '#1D4ED8', name: '스카이블루' },
+            { fill: '#A855F7', border: '#7E22CE', name: '퍼플' },
+            { fill: '#D97706', border: '#92400E', name: '브론즈' },
+            { fill: '#0284C7', border: '#0369A1', name: '딥스카이' }
+        ];
+
+        const n = blocks.length;
+        const bboxes = [];
+        for (let i = 0; i < n; i++) {
+            const coords = blocks[i].coordinates || [];
+            if (!coords || coords.length === 0) {
+                bboxes.push({ minLat: 0, maxLat: 0, minLng: 0, maxLng: 0, cLat: 0, cLng: 0 });
+                continue;
+            }
+            let minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
+            let sumLat = 0, sumLng = 0;
+            for (let k = 0; k < coords.length; k++) {
+                const p = coords[k];
+                if (p[0] < minLat) minLat = p[0];
+                if (p[0] > maxLat) maxLat = p[0];
+                if (p[1] < minLng) minLng = p[1];
+                if (p[1] > maxLng) maxLng = p[1];
+                sumLat += p[0];
+                sumLng += p[1];
+            }
+            bboxes.push({
+                minLat, maxLat, minLng, maxLng,
+                cLat: sumLat / coords.length,
+                cLng: sumLng / coords.length
+            });
+        }
+
+        // 인접 그래프 (Adjacency Graph) 구성
+        const adj = Array.from({ length: n }, () => new Set());
+        const MARGIN = 0.0012; // 약 120m
+        const VERTEX_PROXIMITY_SQ = 0.0007 * 0.0007; // 약 70m
+
+        for (let i = 0; i < n; i++) {
+            const bbA = bboxes[i];
+            const coordsA = blocks[i].coordinates || [];
+            if (coordsA.length === 0) continue;
+
+            for (let j = i + 1; j < n; j++) {
+                const bbB = bboxes[j];
+                const coordsB = blocks[j].coordinates || [];
+                if (coordsB.length === 0) continue;
+
+                // Bounding Box 빠른 배제
+                if (bbA.maxLat + MARGIN < bbB.minLat || bbA.minLat - MARGIN > bbB.maxLat ||
+                    bbA.maxLng + MARGIN < bbB.minLng || bbA.minLng - MARGIN > bbB.maxLng) {
+                    continue;
+                }
+
+                // 중심점 거리가 매우 가까우면(약 450m 이내) 인접 이웃
+                const dCenterSq = (bbA.cLat - bbB.cLat) ** 2 + (bbA.cLng - bbB.cLng) ** 2;
+                if (dCenterSq < 0.0045 * 0.0045) {
+                    adj[i].add(j);
+                    adj[j].add(i);
+                    continue;
+                }
+
+                // 꼭짓점 간 근접 검사 (샘플링)
+                let isNeighbor = false;
+                const stepA = Math.max(1, Math.floor(coordsA.length / 35));
+                const stepB = Math.max(1, Math.floor(coordsB.length / 35));
+
+                for (let a = 0; a < coordsA.length && !isNeighbor; a += stepA) {
+                    const ptA = coordsA[a];
+                    for (let b = 0; b < coordsB.length; b += stepB) {
+                        const ptB = coordsB[b];
+                        const distSq = (ptA[0] - ptB[0]) ** 2 + (ptA[1] - ptB[1]) ** 2;
+                        if (distSq <= VERTEX_PROXIMITY_SQ) {
+                            isNeighbor = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (isNeighbor) {
+                    adj[i].add(j);
+                    adj[j].add(i);
+                }
+            }
+        }
+
+        // 탐욕 그래프 컬러링 (Welsh-Powell)
+        const order = Array.from({ length: n }, (_, i) => i);
+        order.sort((a, b) => adj[b].size - adj[a].size);
+
+        const assignedColors = new Array(n).fill(-1);
+
+        for (let k = 0; k < n; k++) {
+            const u = order[k];
+            const used = new Set();
+            adj[u].forEach(nbr => {
+                if (assignedColors[nbr] !== -1) {
+                    used.add(assignedColors[nbr]);
+                }
+            });
+
+            let chosenIdx = 0;
+            while (chosenIdx < PALETTE.length && used.has(chosenIdx)) {
+                chosenIdx++;
+            }
+            if (chosenIdx >= PALETTE.length) {
+                chosenIdx = chosenIdx % PALETTE.length;
+            }
+
+            assignedColors[u] = chosenIdx;
+            blocks[u].colorStyle = PALETTE[chosenIdx];
+        }
+    }
+
+    /**
      * SHP / ZIP 등 실제 GIS 공간 데이터셋을 MultiPolyline 기반으로 30ms 안에 초고속 렌더링
      */
     loadGisDataset(gisData) {
@@ -2016,21 +2150,47 @@ class WaterMapManager {
         const renderer = this.canvasRenderer;
         const allBounds = L.latLngBounds([]);
 
-        // 1. 블록경계 (103개 Polygon)
+        // 1. 블록경계 (103개 Polygon) - 인접 블록 간 상이한 대비 색상 자동 분할 및 20~30% 연한 투명도 렌더링
+        this.assignBlockColors(gisData.blocks);
+
         const blockWeight = (this.symbolSizes && this.symbolSizes.facilities && this.symbolSizes.facilities.blocks) || 2.2;
+        const blockOpacity = (this.symbolSizes && this.symbolSizes.facilities && this.symbolSizes.facilities.blockOpacity) || 0.24;
+
         if (gisData.blocks && gisData.blocks.length > 0) {
             gisData.blocks.forEach(b => {
                 if (b.coordinates && b.coordinates.length > 2) {
+                    const colorStyle = b.colorStyle || { fill: '#8B5CF6', border: '#7C3AED' };
                     const poly = L.polygon(b.coordinates, {
                         renderer: renderer,
-                        color: '#8B5CF6',
+                        color: colorStyle.border,
                         weight: blockWeight,
-                        opacity: 0.85,
-                        fillColor: '#8B5CF6',
-                        fillOpacity: 0.08,
-                        dashArray: '5, 4'
+                        opacity: 0.90,
+                        fillColor: colorStyle.fill,
+                        fillOpacity: blockOpacity,
+                        dashArray: '5, 4',
+                        originalColorStyle: colorStyle
                     });
-                    poly.bindTooltip(`<b>${b.name}</b>`, { permanent: false, direction: 'center' });
+                    poly.bindTooltip(`<div style="padding:2px 6px; font-weight:700; font-size:12px; color:#0F172A;">${b.name}</div>`, {
+                        sticky: true,
+                        direction: 'top',
+                        className: 'gis-block-tooltip'
+                    });
+                    poly.on('mouseover', (e) => {
+                        if (this.activeBlock !== b.name) {
+                            e.target.setStyle({
+                                weight: blockWeight + 1.2,
+                                fillOpacity: Math.min(0.42, blockOpacity + 0.12)
+                            });
+                        }
+                    });
+                    poly.on('mouseout', (e) => {
+                        if (this.activeBlock !== b.name) {
+                            e.target.setStyle({
+                                weight: blockWeight,
+                                fillOpacity: blockOpacity
+                            });
+                        }
+                    });
                     poly.on('click', () => {
                         this.highlightBlock(b.name);
                     });
@@ -2380,14 +2540,18 @@ class WaterMapManager {
                 const val = parseFloat(saved);
                 if (!isNaN(val)) {
                     slider.value = val;
-                    if (lbl) lbl.textContent = `${val.toFixed(1)}px`;
+                    if (lbl) {
+                        lbl.textContent = subtype === 'blockOpacity' ? `${Math.round(val * 100)}%` : `${val.toFixed(1)}px`;
+                    }
                     this.applySymbolSize(group, subtype, val, false);
                 }
             }
 
             slider.addEventListener('input', (e) => {
                 const val = parseFloat(e.target.value);
-                if (lbl) lbl.textContent = `${val.toFixed(1)}px`;
+                if (lbl) {
+                    lbl.textContent = subtype === 'blockOpacity' ? `${Math.round(val * 100)}%` : `${val.toFixed(1)}px`;
+                }
                 this.applySymbolSize(group, subtype, val, true);
             });
         });
@@ -2418,6 +2582,10 @@ class WaterMapManager {
             if (subtype === 'blocks' && this.layers.blocks) {
                 this.layers.blocks.eachLayer(l => {
                     if (l.setStyle) l.setStyle({ weight: val });
+                });
+            } else if (subtype === 'blockOpacity' && this.layers.blocks) {
+                this.layers.blocks.eachLayer(l => {
+                    if (l.setStyle) l.setStyle({ fillOpacity: val });
                 });
             } else if (subtype === 'meters' && this.layers.meters) {
                 this.layers.meters.eachLayer(l => {
@@ -2946,11 +3114,36 @@ class WaterMapManager {
         if (blockSelect) blockSelect.value = blockName;
         this.activeBlock = blockName;
         if (this.layers.blocks) {
+            const blockWeight = (this.symbolSizes && this.symbolSizes.facilities && this.symbolSizes.facilities.blocks) || 2.2;
+            const blockOpacity = (this.symbolSizes && this.symbolSizes.facilities && this.symbolSizes.facilities.blockOpacity) || 0.24;
             this.layers.blocks.eachLayer(l => {
-                if (l.getBounds && l.getTooltip && l.getTooltip().getContent().includes(blockName)) {
-                    this.map.fitBounds(l.getBounds().pad(0.12), { animate: true });
+                const tooltipContent = (l.getTooltip && l.getTooltip().getContent()) || '';
+                const isMatch = tooltipContent.includes(blockName);
+                if (isMatch) {
+                    l.setStyle({
+                        weight: blockWeight + 1.8,
+                        opacity: 1.0,
+                        fillOpacity: Math.min(0.42, blockOpacity + 0.16),
+                        dashArray: null
+                    });
+                    if (l.bringToFront) l.bringToFront();
+                    if (l.getBounds) {
+                        this.map.fitBounds(l.getBounds().pad(0.12), { animate: true });
+                    }
                     if (typeof this.onFacilitySelect === 'function') {
                         this.onFacilitySelect({ id: blockName, name: blockName, facilityType: 'BLOCK', category: '블록경계' });
+                    }
+                } else {
+                    const originalColor = l.options.originalColorStyle;
+                    if (originalColor) {
+                        l.setStyle({
+                            color: originalColor.border,
+                            fillColor: originalColor.fill,
+                            weight: blockWeight,
+                            opacity: 0.90,
+                            fillOpacity: blockOpacity,
+                            dashArray: '5, 4'
+                        });
                     }
                 }
             });
@@ -2960,15 +3153,51 @@ class WaterMapManager {
     filterByBlock(blockCode) {
         this.activeBlock = blockCode;
         if (this.gisDataLoaded && this.layers.blocks) {
+            const blockWeight = (this.symbolSizes && this.symbolSizes.facilities && this.symbolSizes.facilities.blocks) || 2.2;
+            const blockOpacity = (this.symbolSizes && this.symbolSizes.facilities && this.symbolSizes.facilities.blockOpacity) || 0.24;
             if (blockCode === 'ALL') {
+                this.layers.blocks.eachLayer(l => {
+                    const originalColor = l.options.originalColorStyle;
+                    if (originalColor) {
+                        l.setStyle({
+                            color: originalColor.border,
+                            fillColor: originalColor.fill,
+                            weight: blockWeight,
+                            opacity: 0.90,
+                            fillOpacity: blockOpacity,
+                            dashArray: '5, 4'
+                        });
+                    }
+                });
                 this.fitGisBounds();
                 return;
             }
             let found = false;
             this.layers.blocks.eachLayer(l => {
-                if (l.getBounds && l.getTooltip && l.getTooltip().getContent().includes(blockCode)) {
+                const tooltipContent = (l.getTooltip && l.getTooltip().getContent()) || '';
+                const isMatch = tooltipContent.includes(blockCode);
+                if (isMatch) {
+                    l.setStyle({
+                        weight: blockWeight + 1.8,
+                        opacity: 1.0,
+                        fillOpacity: Math.min(0.42, blockOpacity + 0.16),
+                        dashArray: null
+                    });
+                    if (l.bringToFront) l.bringToFront();
                     this.map.fitBounds(l.getBounds().pad(0.15), { animate: true });
                     found = true;
+                } else {
+                    const originalColor = l.options.originalColorStyle;
+                    if (originalColor) {
+                        l.setStyle({
+                            color: originalColor.border,
+                            fillColor: originalColor.fill,
+                            weight: blockWeight,
+                            opacity: 0.90,
+                            fillOpacity: blockOpacity,
+                            dashArray: '5, 4'
+                        });
+                    }
                 }
             });
             if (found) return;

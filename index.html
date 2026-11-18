@@ -23,7 +23,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1"></script>
     <!-- 커스텀 스타일 -->
-    <link rel="stylesheet" href="css/style.css?v=20261118C">
+    <link rel="stylesheet" href="css/style.css?v=20261118D">
 </head>
 <body>
 
@@ -980,11 +980,11 @@
                         <div class="glc-layer-row">
                             <label class="glc-layer-item">
                                 <input type="checkbox" id="chkLayer_blocks" class="glc-checkbox" checked data-layer="blocks">
-                                <span class="glc-indicator" style="background:#8B5CF6; border-radius:3px; border:1px solid #7C3AED;"></span>
+                                <span class="glc-indicator" style="background: linear-gradient(135deg, #8B5CF6, #10B981, #F59E0B); border-radius:3px; border:1px solid #7C3AED;" title="인접 블록 간 상이한 14색 대비 분할"></span>
                                 <span class="glc-name">블록경계</span>
                                 <span class="glc-count-badge" id="cntLayer_blocks">103</span>
                             </label>
-                            <button type="button" class="glc-expand-btn" data-target="glcSub_blocks" title="경계선 굵기 설정">
+                            <button type="button" class="glc-expand-btn" data-target="glcSub_blocks" title="경계선 굵기 및 내부 투명도 설정">
                                 <i class="fa-solid fa-chevron-down"></i>
                             </button>
                         </div>
@@ -994,6 +994,13 @@
                                     <span class="glc-size-tag">선 굵기</span>
                                     <input type="range" class="glc-size-slider" min="1" max="6" step="0.2" value="2.2" data-group="facilities" data-subtype="blocks">
                                     <span class="glc-size-num" id="lblSize_facilities_blocks">2.2px</span>
+                                </div>
+                            </div>
+                            <div class="glc-sub-item" style="margin-top:6px;">
+                                <div class="glc-size-row">
+                                    <span class="glc-size-tag">내부 투명도</span>
+                                    <input type="range" class="glc-size-slider" min="0.10" max="0.50" step="0.02" value="0.24" data-group="facilities" data-subtype="blockOpacity">
+                                    <span class="glc-size-num" id="lblSize_facilities_blockOpacity">24%</span>
                                 </div>
                             </div>
                         </div>
@@ -2848,7 +2855,7 @@
 <script src="js/offlineStore.js?v=20261112f"></script>
 <!-- 김해시 실제 관망 GIS 공간데이터셋 (WGS84 변환) -->
 <script src="data/gimhae_gis_dataset.js?v=20261117B"></script>
-<script src="js/map.js?v=20261118C"></script>
+<script src="js/map.js?v=20261118D"></script>
 <!-- 수용가 부과량 데이터 (file:// 환경 CORS 차단 방지 및 고속 로드) -->
 <script defer src="data/consumer_charge_data.js"></script>
 <!-- 1. 유량 및 유수율 관리(수정작업) 100% 검증 기준 데이터셋 -->

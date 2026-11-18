@@ -10398,6 +10398,30 @@ body.theme-navy .vsm-close-btn {
     color: #94A3B8 !important;
 }
 
+/* 관망 블록 툴팁 디자인 */
+.gis-block-tooltip {
+    background: rgba(255, 255, 255, 0.95) !important;
+    border: 1.5px solid #CBD5E1 !important;
+    border-radius: 8px !important;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18) !important;
+    padding: 3px 8px !important;
+    font-size: 12px !important;
+    font-weight: 700 !important;
+    color: #0F172A !important;
+    pointer-events: none !important;
+}
+.gis-block-tooltip::before {
+    border-top-color: rgba(255, 255, 255, 0.95) !important;
+}
+body.theme-navy .gis-block-tooltip {
+    background: rgba(15, 23, 42, 0.95) !important;
+    border-color: #334155 !important;
+    color: #F8FAFC !important;
+}
+body.theme-navy .gis-block-tooltip::before {
+    border-top-color: rgba(15, 23, 42, 0.95) !important;
+}
+
 
 
 
