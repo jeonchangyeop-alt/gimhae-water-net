@@ -5441,6 +5441,8 @@ function initVWorldMapControls() {
             }
         }, 60);
     };
+    window.openAddressSearchModal = openSearchModal;
+    window.closeAddressSearchModal = closeSearchModal;
 
     const closeSearchModal = () => {
         if (!searchBackdrop) return;
@@ -5475,11 +5477,14 @@ function initVWorldMapControls() {
     });
 
     if (btnMapSearchToggle) {
-        btnMapSearchToggle.addEventListener('click', (e) => {
-            e.stopPropagation();
+        btnMapSearchToggle.onclick = (e) => {
+            if (e) e.stopPropagation();
             const isOpen = searchBackdrop && searchBackdrop.style.display === 'flex';
             if (isOpen) closeSearchModal();
             else openSearchModal();
+        };
+        btnMapSearchToggle.addEventListener('pointerdown', (e) => {
+            e.stopPropagation();
         });
     }
 

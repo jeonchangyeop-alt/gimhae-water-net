@@ -1595,6 +1595,23 @@
                                 <span class="glc-slider-round"></span>
                             </label>
                         </div>
+                        <!-- 모바일 라벨 표시 항목 선택 -->
+                        <div class="glc-modal-row" id="glcModalFieldRow" style="margin-top:6px;">
+                            <span class="glc-modal-label">라벨 항목</span>
+                            <select id="selGlcModalLabelField" class="glc-label-field-select" style="max-width:160px; margin-top:0;">
+                            </select>
+                        </div>
+                        <!-- 모바일 관로 색상 선택 (관로 레이어 전용) -->
+                        <div class="glc-modal-row" id="glcModalColorRow" style="display:none; margin-top:6px;">
+                            <span class="glc-modal-label">관로 색상</span>
+                            <select id="selGlcModalColor" class="glc-color-select" style="margin-left:0; height:26px; width:auto;">
+                                <option value="#2563EB">파랑</option>
+                                <option value="#DC2626">빨강</option>
+                                <option value="#C026D3">자홍</option>
+                                <option value="#0D9488">청록</option>
+                                <option value="#10B981">녹색</option>
+                            </select>
+                        </div>
                         <div class="glc-modal-row glc-modal-slider-row">
                             <div style="display:flex; justify-content:space-between; align-items:center; width:100%; margin-bottom:6px;">
                                 <span class="glc-modal-label">라벨 크기</span>
@@ -1658,7 +1675,7 @@
 
                 <div class="map-toolbar-group" id="mapToolbarGroup">
                     <!-- 1. 통합 검색 버튼 (Ctrl + F) -->
-                    <button type="button" id="btnMapSearchToggle" class="btn-map-ctrl-fab" title="통합 주소·GIS 검색 (단축키: Ctrl + F)">
+                    <button type="button" id="btnMapSearchToggle" class="btn-map-ctrl-fab" title="통합 주소·GIS 검색 (단축키: Ctrl + F)" onclick="if(typeof window.openAddressSearchModal === 'function') window.openAddressSearchModal();">
                         <i class="fa-solid fa-magnifying-glass"></i>
                     </button>
 

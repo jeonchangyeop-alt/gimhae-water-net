@@ -1106,11 +1106,20 @@ function initGisCanvasLayerClass() {
                             let labelText = 'D' + dia;
                             if (spFld === 'len') labelText = (sp.len ? sp.len + 'm' : 'D' + dia);
                             else if (spFld === 'id') labelText = sp.id || ('D' + dia);
+                            const dx = pt2.x - pt1.x;
+                            const dy = pt2.y - pt1.y;
+                            let angle = Math.atan2(dy, dx);
+                            if (angle > Math.PI / 2 || angle < -Math.PI / 2) angle += Math.PI;
+
+                            ctx.save();
+                            ctx.translate(mx, my);
+                            ctx.rotate(angle);
                             ctx.lineWidth = 2.5;
                             ctx.strokeStyle = 'rgba(255, 255, 255, 0.95)';
-                            ctx.strokeText(labelText, mx, my);
+                            ctx.strokeText(labelText, 0, 0);
                             ctx.fillStyle = '#0E7490';
-                            ctx.fillText(labelText, mx, my);
+                            ctx.fillText(labelText, 0, 0);
+                            ctx.restore();
                         }
                         ctx.restore();
                     }
@@ -1171,11 +1180,20 @@ function initGisCanvasLayerClass() {
                         else if (lm2Fld === 'len') labelText = (p.len ? p.len + 'm' : '-');
                         else if (lm2Fld === 'id') labelText = p.id || '-';
 
+                        const dx = pt2.x - pt1.x;
+                        const dy = pt2.y - pt1.y;
+                        let angle = Math.atan2(dy, dx);
+                        if (angle > Math.PI / 2 || angle < -Math.PI / 2) angle += Math.PI;
+
+                        ctx.save();
+                        ctx.translate(mx, my);
+                        ctx.rotate(angle);
                         ctx.lineWidth = 3;
                         ctx.strokeStyle = 'rgba(255, 255, 255, 0.95)';
-                        ctx.strokeText(labelText, mx, my);
+                        ctx.strokeText(labelText, 0, 0);
                         ctx.fillStyle = lm2Col;
-                        ctx.fillText(labelText, mx, my);
+                        ctx.fillText(labelText, 0, 0);
+                        ctx.restore();
                     }
                     ctx.restore();
                 }
@@ -1302,12 +1320,21 @@ function initGisCanvasLayerClass() {
                                 labelText = p.id || '-';
                             }
 
+                            const dx = pt2.x - pt1.x;
+                            const dy = pt2.y - pt1.y;
+                            let angle = Math.atan2(dy, dx);
+                            if (angle > Math.PI / 2 || angle < -Math.PI / 2) angle += Math.PI;
+
+                            ctx.save();
+                            ctx.translate(mx, my);
+                            ctx.rotate(angle);
                             ctx.lineWidth = 3;
                             ctx.strokeStyle = 'rgba(255, 255, 255, 0.95)';
-                            ctx.strokeText(labelText, mx, my);
+                            ctx.strokeText(labelText, 0, 0);
                             const activePipeCol = dia > 250 ? ((mm.pipeColors && mm.pipeColors.d500) || '#DC2626') : ((mm.pipeColors && mm.pipeColors.d250) || '#2563EB');
                             ctx.fillStyle = activePipeCol;
-                            ctx.fillText(labelText, mx, my);
+                            ctx.fillText(labelText, 0, 0);
+                            ctx.restore();
                         }
                         ctx.restore();
                     }
@@ -2684,6 +2711,17 @@ class WaterMapManager {
         const panel = document.getElementById('gisLayerControlPanel');
         if (!panel) return;
 
+        // Leaflet 지도 터치/클릭 전파 방지 (모바일에서 select 박스 및 슬라이더 터치 조작 100% 보장)
+        if (window.L && L.DomEvent) {
+            L.DomEvent.disableClickPropagation(panel);
+            L.DomEvent.disableScrollPropagation(panel);
+        }
+        panel.querySelectorAll('select, input, button, label').forEach(el => {
+            ['touchstart', 'touchend', 'pointerdown'].forEach(evName => {
+                el.addEventListener(evName, (e) => e.stopPropagation(), { passive: true });
+            });
+        });
+
         // 모바일 기본값: 화면 너비가 768px 이하이면 접힌 상태로 시작하여 지도 가림 완전 방지
         if (window.innerWidth <= 768) {
             panel.classList.add('collapsed');
@@ -3056,7 +3094,7 @@ class WaterMapManager {
             };
             updateSymbolColor(sel.value);
 
-            sel.addEventListener('change', (e) => {
+            const onColorChange = (e) => {
                 const val = e.target.value;
                 this.pipeColors[pipeSubtype] = val;
                 updateSymbolColor(val);
@@ -3066,7 +3104,9 @@ class WaterMapManager {
                 if (this.gisCanvasLayer) {
                     this.gisCanvasLayer.redraw();
                 }
-            });
+            };
+            sel.addEventListener('change', onColorChange);
+            sel.addEventListener('input', onColorChange);
         });
 
         // 11. 라벨 표시 필드 선택 드롭다운 이벤트 바인딩
@@ -3097,7 +3137,7 @@ class WaterMapManager {
                 sel.value = this.labelFields[layerKey];
             }
 
-            sel.addEventListener('change', (e) => {
+            const onLabelFieldChange = (e) => {
                 const val = e.target.value;
                 this.labelFields[layerKey] = val;
                 try {
@@ -3112,7 +3152,9 @@ class WaterMapManager {
                 if (this.gisCanvasLayer) {
                     this.gisCanvasLayer.redraw();
                 }
-            });
+            };
+            sel.addEventListener('change', onLabelFieldChange);
+            sel.addEventListener('input', onLabelFieldChange);
         });
     }
 
@@ -3456,6 +3498,99 @@ const blkFld = (this.labelFields && this.labelFields.blocks) || 'name';
         }
         if (sizeVal) sizeVal.textContent = `${curSize}px`;
 
+        // 모바일 라벨 항목 드롭다운 옵션 동적 구성
+        const modalFieldSel = document.getElementById('selGlcModalLabelField');
+        const modalFieldRow = document.getElementById('glcModalFieldRow');
+        if (modalFieldSel && modalFieldRow) {
+            const fieldOptions = {
+                pipesLm: [
+                    { val: 'pip_lbl', text: '관로라벨 (pip_lbl - 년도/관종/관경/연장/심도)' },
+                    { val: 'dia', text: '관경 (D관경)' },
+                    { val: 'mat', text: '관종 (재질)' },
+                    { val: 'len', text: '연장 (m)' },
+                    { val: 'id', text: '관리번호 (LM-1)' }
+                ],
+                pipesLm2: [
+                    { val: 'pip_lbl', text: '관로라벨 (pip_lbl)' },
+                    { val: 'dia', text: '관경 (D관경)' },
+                    { val: 'mat', text: '관종 (재질)' },
+                    { val: 'len', text: '연장 (m)' },
+                    { val: 'id', text: '관리번호 (LM2-1)' }
+                ],
+                servicePipes: [
+                    { val: 'dia', text: '관경 (D관경)' },
+                    { val: 'len', text: '연장 (m)' },
+                    { val: 'id', text: '관리번호' }
+                ],
+                blocks: [
+                    { val: 'name', text: '블록명 (구산1 등)' },
+                    { val: 'id', text: '블록코드' }
+                ],
+                reservoirs: [
+                    { val: 'name', text: '시설물명 (배수지명)' },
+                    { val: 'capacity', text: '시설용량 (m³)' },
+                    { val: 'id', text: '관리번호' }
+                ],
+                boosters: [
+                    { val: 'name', text: '시설물명 (가압장명)' },
+                    { val: 'capacity', text: '시설용량' },
+                    { val: 'id', text: '관리번호' }
+                ],
+                meters: [
+                    { val: 'name', text: '시설물명 (유량계명)' },
+                    { val: 'id', text: '관리번호' }
+                ]
+            };
+
+            const opts = fieldOptions[layerKey];
+            if (opts && opts.length > 0) {
+                modalFieldRow.style.display = 'flex';
+                const curFld = (this.labelFields && this.labelFields[layerKey]) || opts[0].val;
+                modalFieldSel.innerHTML = opts.map(o => `<option value="${o.val}" ${o.val === curFld ? 'selected' : ''}>${o.text}</option>`).join('');
+                modalFieldSel.onchange = (e) => {
+                    const val = e.target.value;
+                    if (!this.labelFields) this.labelFields = {};
+                    this.labelFields[layerKey] = val;
+                    try { localStorage.setItem('gis_label_fields', JSON.stringify(this.labelFields)); } catch (err) {}
+                    const syncSel = document.querySelector(`.glc-label-field-select[data-layer="${layerKey}"]`);
+                    if (syncSel) syncSel.value = val;
+                    if (layerKey === 'blocks') this.renderBlockLabels();
+                    else if (layerKey === 'reservoirs') this.renderReservoirLabels();
+                    else if (layerKey === 'boosters') this.renderBoosterLabels();
+                    else if (layerKey === 'meters') this.renderMeterLabels();
+                    if (this.gisCanvasLayer) this.gisCanvasLayer.redraw();
+                };
+            } else {
+                modalFieldRow.style.display = 'none';
+            }
+        }
+
+        // 모바일 관로 색상 드롭다운 동기화
+        const modalColorRow = document.getElementById('glcModalColorRow');
+        const modalColorSel = document.getElementById('selGlcModalColor');
+        if (modalColorRow && modalColorSel) {
+            const isPipe = (layerKey === 'pipesLm' || layerKey === 'pipesLm2' || layerKey === 'servicePipes');
+            if (isPipe) {
+                modalColorRow.style.display = 'flex';
+                const pipeTypeKey = layerKey === 'pipesLm' ? 'd250' : layerKey;
+                const curColor = (this.pipeColors && this.pipeColors[pipeTypeKey]) || '#2563EB';
+                modalColorSel.value = curColor;
+                modalColorSel.onchange = (e) => {
+                    const col = e.target.value;
+                    if (!this.pipeColors) this.pipeColors = {};
+                    this.pipeColors[pipeTypeKey] = col;
+                    try { localStorage.setItem('gis_pipe_colors', JSON.stringify(this.pipeColors)); } catch (err) {}
+                    const syncColorSel = document.querySelector(`.glc-color-select[data-pipe-subtype="${pipeTypeKey}"]`);
+                    if (syncColorSel) syncColorSel.value = col;
+                    const sym = document.querySelector(`.glc-pipe-sym-${pipeTypeKey}`);
+                    if (sym) sym.style.color = col;
+                    if (this.gisCanvasLayer) this.gisCanvasLayer.redraw();
+                };
+            } else {
+                modalColorRow.style.display = 'none';
+            }
+        }
+
         if (backdrop) backdrop.style.display = 'flex';
     }
 
@@ -3505,8 +3640,8 @@ const blkFld = (this.labelFields && this.labelFields.blocks) || 'name';
             el.addEventListener('pointerdown', (e) => {
                 if (e.button && e.button !== 0) return;
 
-                // 폼 컨트롤(슬라이더, 체크박스 등) 및 서브패널 조작 시 드래그 차단
-                if (e.target.closest('input, select, textarea, .glc-sub-panel')) {
+                // 버튼, 폼 컨트롤(슬라이더, 체크박스 등) 및 서브패널 조작 시 드래그 차단 (돋보기 등 클릭 보장)
+                if (e.target.closest('button, .btn-map-ctrl-fab, a, input, select, textarea, .glc-sub-panel')) {
                     return;
                 }
 
@@ -4301,6 +4436,10 @@ const blkFld = (this.labelFields && this.labelFields.blocks) || 'name';
     /**
      * 주소 검색 통합 엔진 (김해 GIS 8종 전 시설물 색인 + VWorld Search 2.0 API 병합)
      */
+    /**
+     * 주소 검색 통합 엔진 (김해 GIS 전 시설물 + 55,699 수용가 + 광역 오픈 Geocoder 통합)
+     * 우선순위: 1. 주소 (구주소, 신주소) -> 2. 시설물명 (가압장, 배수지, 유량계, 밸브) -> 3. 블록명 -> 4. 상호/지명
+     */
     async searchAddress(query) {
         const q = (query || '').trim();
         if (!q) return [];
@@ -4308,82 +4447,255 @@ const blkFld = (this.labelFields && this.labelFields.blocks) || 'name';
         const cleanQ = q.toLowerCase().replace(/\s+/g, '');
         const gis = this.gisData || window.GIMHAE_GIS_DATA || {};
 
-        const results = [];
-        const seen = new Set();
+        const candidates = [];
+        const seenKeys = new Set();
+        const seenAddresses = new Set();
 
-        const addResult = (item) => {
+        const addCandidate = (item, type, basePriority = 500, matchText = '') => {
             if (!item) return;
             const latVal = typeof item.lat === 'number' ? item.lat : parseFloat(item.lat);
             const lngVal = typeof item.lng === 'number' ? item.lng : parseFloat(item.lng);
-            const key = `${item.facilityType || ''}_${item.facilityId || ''}_${Math.round(latVal * 10000)}_${Math.round(lngVal * 10000)}_${item.title}`;
-            if (!seen.has(key)) {
-                seen.add(key);
-                results.push({ ...item, lat: latVal, lng: lngVal });
+            if (isNaN(latVal) || isNaN(lngVal)) return;
+
+            // 중복 키 방지
+            const key = `${item.title}_${Math.round(latVal * 10000)}_${Math.round(lngVal * 10000)}`;
+            if (seenKeys.has(key)) return;
+            seenKeys.add(key);
+
+            // 주소 중복 필터링 (동일 도로명/지번은 상위 대표 1개만 허용하여 노이즈 제거)
+            if (type === 'ADDRESS') {
+                const normAddr = (item.road || item.parcel || '').trim();
+                if (normAddr) {
+                    if (seenAddresses.has(normAddr)) return;
+                    seenAddresses.add(normAddr);
+                }
             }
+
+            // 정확도(Relevance) 점수 계산
+            let relevance = 0;
+            const cleanText = (matchText || item.title || '').toLowerCase().replace(/\s+/g, '');
+            if (cleanText === cleanQ) {
+                relevance = 500; // 완전 일치
+            } else if (cleanText.startsWith(cleanQ)) {
+                relevance = 300; // 접두사 일치
+            } else if (cleanText.includes(cleanQ)) {
+                relevance = 150; // 포함 일치
+            } else {
+                relevance = 50;
+            }
+
+            // 최종 정렬 점수 = 기본 우선순위(1000/700/500/300) + 정확도 점수
+            const score = basePriority + relevance;
+
+            candidates.push({
+                ...item,
+                lat: latVal,
+                lng: lngVal,
+                _score: score,
+                _type: type
+            });
         };
 
-        // 1. 가압장 (gisData.boosters, 63개소) - e.g. "명동가압장", "삼계가압장", "구산가압장", "명동"
+        // =========================================================================
+        // 1. [우선순위 1위] 주소 (구주소, 신주소, 도로명, 지번, 행정구역) - 가중치 1000
+        // =========================================================================
+
+        // 1-1. 전역 사전 내 지번/도로명 주소 및 행정구역 (구산동, 삼계동 등)
+        if (typeof GIMHAE_GIS_INDEX !== 'undefined' && Array.isArray(GIMHAE_GIS_INDEX)) {
+            GIMHAE_GIS_INDEX.forEach(item => {
+                const isAddr = item.category === '도로명주소' || item.category === '지번주소' || item.category === '행정구역';
+                if (isAddr) {
+                    const roadMatch = (item.road || '').toLowerCase().replace(/\s+/g, '').includes(cleanQ);
+                    const parcelMatch = (item.parcel || '').toLowerCase().replace(/\s+/g, '').includes(cleanQ);
+                    const titleMatch = (item.title || '').toLowerCase().replace(/\s+/g, '').includes(cleanQ);
+                    if (roadMatch || parcelMatch || titleMatch) {
+                        addCandidate({
+                            title: item.title,
+                            name: item.title,
+                            category: item.category,
+                            road: item.road || item.parcel,
+                            parcel: item.parcel || item.road,
+                            lat: item.lat,
+                            lng: item.lng,
+                            block: item.block || this.findNearestBlockName(item.lat, item.lng),
+                            source: '김해 주소대장'
+                        }, 'ADDRESS', 1000, item.road || item.parcel || item.title);
+                    }
+                }
+            });
+        }
+
+        // 1-2. 부과수용가 55,699건에서 도로명/지번 일치 검색 (상위 10개로 압축)
+        if (gis.billingConsumers && Array.isArray(gis.billingConsumers) && cleanQ.length >= 2) {
+            let addrMatchCount = 0;
+            const bLen = gis.billingConsumers.length;
+            for (let i = 0; i < bLen && addrMatchCount < 10; i++) {
+                const b = gis.billingConsumers[i];
+                const addr = b.addr || '';
+                const oaddr = b.oaddr || '';
+                const cleanAddr = addr.toLowerCase().replace(/\s+/g, '');
+                const cleanOaddr = oaddr.toLowerCase().replace(/\s+/g, '');
+
+                const isAddrMatched = cleanAddr.includes(cleanQ) || cleanOaddr.includes(cleanQ);
+                if (isAddrMatched) {
+                    addrMatchCount++;
+                    addCandidate({
+                        title: addr || oaddr,
+                        name: addr || oaddr,
+                        category: addr ? '도로명주소' : '지번주소',
+                        road: addr || oaddr,
+                        parcel: oaddr || addr,
+                        lat: b.lat,
+                        lng: b.lng,
+                        block: b.block || this.findNearestBlockName(b.lat, b.lng),
+                        facilityType: 'CONSUMER',
+                        facilityId: b.cno || '',
+                        source: '김해 주소대장 (현장주소)'
+                    }, 'ADDRESS', 1000, addr || oaddr);
+                }
+            }
+        }
+
+        // 1-3. 전국 광역 오픈 Geocoder (Nominatim) - 부산, 김해, 경남 등 대한민국 전역 주소 지원!
+        if (cleanQ.length >= 2) {
+            try {
+                const nomUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=6&countrycodes=kr`;
+                const nomRes = await fetch(nomUrl, { headers: { 'Accept-Language': 'ko' } });
+                if (nomRes.ok) {
+                    const nomData = await nomRes.json();
+                    if (Array.isArray(nomData)) {
+                        nomData.forEach(item => {
+                            const lat = parseFloat(item.lat);
+                            const lng = parseFloat(item.lon);
+                            if (lat >= 33.0 && lat <= 39.0 && lng >= 124.0 && lng <= 132.0) {
+                                const displayName = item.display_name.split(',')[0].trim();
+                                const isGimhae = (lat >= 35.1 && lat <= 35.45 && lng >= 128.65 && lng <= 129.1);
+                                addCandidate({
+                                    title: displayName,
+                                    name: displayName,
+                                    category: item.type === 'administrative' ? '행정구역' : '주소/장소',
+                                    road: item.display_name,
+                                    parcel: item.display_name,
+                                    lat: lat,
+                                    lng: lng,
+                                    block: isGimhae ? this.findNearestBlockName(lat, lng) : '(김해 외 지역)',
+                                    source: '공공 오픈 주소 검색'
+                                }, 'ADDRESS', 1000, displayName);
+                            }
+                        });
+                    }
+                }
+            } catch (e) {}
+        }
+
+        // =========================================================================
+        // 2. [우선순위 2위] 시설물명 (가압장, 배수지, 구역유량계, 밸브) - 가중치 700
+        // =========================================================================
+
+        // 2-1. 가압장 (63개소)
         if (gis.boosters && Array.isArray(gis.boosters)) {
             gis.boosters.forEach(bst => {
                 const name = bst.name || '';
-                const id = bst.id || '';
                 const cleanName = name.toLowerCase().replace(/\s+/g, '');
-                const cleanId = id.toLowerCase().replace(/\s+/g, '');
-                const coreName = cleanName.replace(/가압장/g, '');
-                const coreQ = cleanQ.replace(/가압장/g, '');
-
-                if (cleanName.includes(cleanQ) || cleanQ.includes(cleanName) || cleanId.includes(cleanQ) ||
-                    (coreQ.length >= 2 && (coreName.includes(coreQ) || coreQ.includes(coreName)))) {
-                    addResult({
+                if (cleanName.includes(cleanQ) || cleanQ.includes(cleanName.replace(/가압장/g, ''))) {
+                    addCandidate({
                         title: `[가압장] ${name}`,
                         name: name,
                         category: '가압장',
                         road: bst.address || `김해시 ${name}`,
-                        parcel: `시설용량: ${bst.capacity || '-'} / 관리번호: ${id}`,
+                        parcel: `시설용량: ${bst.capacity || '-'}`,
                         lat: bst.lat,
                         lng: bst.lng,
                         block: bst.block || '',
                         facilityType: 'BOOSTER',
-                        facilityId: id,
-                        facilityData: bst,
-                        source: '김해 GIS 가압장대장'
-                    });
+                        facilityId: bst.id || '',
+                        source: '김해 GIS 시설대장'
+                    }, 'FACILITY', 700, name);
                 }
             });
         }
 
-        // 2. 정수장 / 배수지 (gisData.reservoirs, 44개소) - e.g. "삼계배수지", "명동정수장", "배수지"
+        // 2-2. 배수지 / 정수장 (44개소)
         if (gis.reservoirs && Array.isArray(gis.reservoirs)) {
             gis.reservoirs.forEach(res => {
                 const name = res.name || '';
-                const id = res.id || '';
                 const cleanName = name.toLowerCase().replace(/\s+/g, '');
-                const cleanId = id.toLowerCase().replace(/\s+/g, '');
-                const coreName = cleanName.replace(/배수지|정수장|취수장/g, '');
-                const coreQ = cleanQ.replace(/배수지|정수장|취수장/g, '');
-
-                if (cleanName.includes(cleanQ) || cleanQ.includes(cleanName) || cleanId.includes(cleanQ) ||
-                    (coreQ.length >= 2 && (coreName.includes(coreQ) || coreQ.includes(coreName)))) {
-                    const isPlant = cleanName.includes('정수') || cleanName.includes('취수');
-                    addResult({
+                if (cleanName.includes(cleanQ) || cleanQ.includes(cleanName.replace(/배수지|정수장/g, ''))) {
+                    const isPlant = cleanName.includes('정수');
+                    addCandidate({
                         title: `[${isPlant ? '정수장' : '배수지'}] ${name}`,
                         name: name,
                         category: isPlant ? '정수장' : '배수지',
                         road: res.address || `김해시 ${name}`,
-                        parcel: `시설용량: ${res.capacity || '-'} / 관리번호: ${id}`,
+                        parcel: `시설용량: ${res.capacity || '-'}`,
                         lat: res.lat,
                         lng: res.lng,
                         block: res.block || '',
                         facilityType: 'RESERVOIR',
-                        facilityId: id,
-                        facilityData: res,
-                        source: '김해 GIS 배수지대장'
-                    });
+                        facilityId: res.id || '',
+                        source: '김해 GIS 시설대장'
+                    }, 'FACILITY', 700, name);
                 }
             });
         }
 
-        // 3. 관망블록 (gisData.blocks, 103개 구역) - e.g. "구산3", "구산3블록", "동상동", "내외", "활천"
+        // 2-3. 구역유량계 (326개소)
+        if (gis.flowMeters && Array.isArray(gis.flowMeters)) {
+            let mCount = 0;
+            for (let i = 0; i < gis.flowMeters.length && mCount < 5; i++) {
+                const flw = gis.flowMeters[i];
+                const name = flw.name || '';
+                const id = flw.id || '';
+                const cleanName = name.toLowerCase().replace(/\s+/g, '');
+                if (cleanName.includes(cleanQ) || id.toLowerCase().includes(cleanQ)) {
+                    mCount++;
+                    addCandidate({
+                        title: `[유량계] ${name || id}`,
+                        name: name || id,
+                        category: '구역유량계',
+                        road: flw.address || `김해시 구역유량계 (${id})`,
+                        parcel: `계량기 관리번호: ${id}`,
+                        lat: flw.lat,
+                        lng: flw.lng,
+                        block: flw.block || '',
+                        facilityType: 'FLOW_METER',
+                        facilityId: id,
+                        source: '김해 GIS 시설대장'
+                    }, 'FACILITY', 700, name || id);
+                }
+            }
+        }
+
+        // 2-4. 밸브류 (주요 일치 4개)
+        if (gis.valves && Array.isArray(gis.valves) && cleanQ.length >= 2) {
+            let vCount = 0;
+            for (let i = 0; i < gis.valves.length && vCount < 4; i++) {
+                const v = gis.valves[i];
+                const name = v.name || '';
+                const id = v.id || '';
+                const cat = v.cat || '제수변';
+                if (name.toLowerCase().includes(cleanQ) || id.toLowerCase().includes(cleanQ)) {
+                    vCount++;
+                    addCandidate({
+                        title: `[${cat}] ${name || id}`,
+                        name: name || id,
+                        category: cat,
+                        road: `구경 D${v.dia || '-'}mm, 관리번호 ${id}`,
+                        parcel: `관리번호: ${id}`,
+                        lat: v.lat,
+                        lng: v.lng,
+                        block: v.block || '',
+                        facilityType: 'VALVE',
+                        facilityId: id,
+                        source: '김해 GIS 시설대장'
+                    }, 'FACILITY', 700, name || id);
+                }
+            }
+        }
+
+        // =========================================================================
+        // 3. [우선순위 3위] 블록명 (103개 소블록) - 가중치 500
+        // =========================================================================
         if (gis.blocks && Array.isArray(gis.blocks)) {
             gis.blocks.forEach(b => {
                 const name = b.name || '';
@@ -4393,9 +4705,8 @@ const blkFld = (this.labelFields && this.labelFields.blocks) || 'name';
                 const coreName = cleanName.replace(/블록|소블록|_수정/g, '');
                 const coreQ = cleanQ.replace(/블록|소블록/g, '');
 
-                if (cleanName.includes(cleanQ) || cleanQ.includes(cleanName) || cleanId.includes(cleanQ) ||
+                if (cleanName.includes(cleanQ) || cleanId.includes(cleanQ) ||
                     (coreQ.length >= 2 && (coreName.includes(coreQ) || coreQ.includes(coreName)))) {
-                    
                     let centerLat = 35.2285, centerLng = 128.8893;
                     if (b.coordinates && b.coordinates.length > 0) {
                         let sumLat = 0, sumLng = 0;
@@ -4404,7 +4715,7 @@ const blkFld = (this.labelFields && this.labelFields.blocks) || 'name';
                         centerLng = sumLng / b.coordinates.length;
                     }
 
-                    addResult({
+                    addCandidate({
                         title: `[관망블록] ${name}`,
                         name: name,
                         category: '관망블록',
@@ -4418,198 +4729,64 @@ const blkFld = (this.labelFields && this.labelFields.blocks) || 'name';
                         facilityType: 'BLOCK',
                         facilityId: id,
                         source: '김해 GIS 블록대장'
-                    });
+                    }, 'BLOCK', 500, name);
                 }
             });
         }
 
-        // 4. 구역유량계 (gisData.flowMeters, 326개소)
-        if (gis.flowMeters && Array.isArray(gis.flowMeters)) {
-            gis.flowMeters.forEach(flw => {
-                const name = flw.name || '';
-                const id = flw.id || '';
-                const cleanName = name.toLowerCase().replace(/\s+/g, '');
-                const cleanId = id.toLowerCase().replace(/\s+/g, '');
+        // =========================================================================
+        // 4. [우선순위 4위] 일반 지명/관광지/상호/공장명 - 가중치 300
+        // =========================================================================
 
-                if (cleanName.includes(cleanQ) || cleanId.includes(cleanQ)) {
-                    addResult({
-                        title: `[구역유량계] ${name || id}`,
-                        name: name || id,
-                        category: '구역유량계',
-                        road: flw.address || `김해시 구역유량계 (${id})`,
-                        parcel: `계량기 관리번호: ${id}`,
-                        lat: flw.lat,
-                        lng: flw.lng,
-                        block: flw.block || '',
-                        facilityType: 'FLOW_METER',
-                        facilityId: id,
-                        facilityData: flw,
-                        source: '김해 GIS 유량계대장'
-                    });
-                }
-            });
-        }
-
-        // 5. 밸브류 (gisData.valves, 33,358개소 중 상위 일치 10개)
-        if (gis.valves && Array.isArray(gis.valves) && cleanQ.length >= 2) {
-            let vCount = 0;
-            for (let i = 0; i < gis.valves.length && vCount < 10; i++) {
-                const v = gis.valves[i];
-                const name = v.name || '';
-                const id = v.id || '';
-                const cde = v.cde || '';
-                const cat = v.cat || '제수변';
-                const cleanName = name.toLowerCase().replace(/\s+/g, '');
-                const cleanId = id.toLowerCase().replace(/\s+/g, '');
-                const cleanCde = cde.toLowerCase().replace(/\s+/g, '');
-
-                if ((cleanName && cleanName.includes(cleanQ)) || cleanId.includes(cleanQ) || (cleanCde && cleanCde.includes(cleanQ))) {
-                    vCount++;
-                    addResult({
-                        title: `[${cat}] ${name || id}`,
-                        name: name || id,
-                        category: cat,
-                        road: v.address || `구경: ${v.dia || '-'}mm (${cde || '-'})`,
-                        parcel: `관리번호: ${id}`,
-                        lat: v.lat,
-                        lng: v.lng,
-                        block: v.block || '',
-                        facilityType: 'VALVE',
-                        facilityId: id,
-                        facilityData: v,
-                        source: '김해 GIS 밸브대장'
-                    });
-                }
-            }
-        }
-
-        // 6. 상수관로 (gisData.pipesLm / pipesLm2 중 상위 일치 8개)
-        if (cleanQ.includes('lm') || cleanQ.includes('관로') || cleanQ.includes('pipe')) {
-            const pipes = [...(gis.pipesLm || []), ...(gis.pipesLm2 || [])];
-            let pCount = 0;
-            for (let i = 0; i < pipes.length && pCount < 8; i++) {
-                const p = pipes[i];
-                const pId = (p.id || '').toLowerCase().replace(/\s+/g, '');
-                if (pId.includes(cleanQ)) {
-                    pCount++;
-                    const coords = p.coordinates || p.c || [];
-                    const mid = coords.length > 0 ? coords[Math.floor(coords.length / 2)] : [35.2285, 128.8893];
-                    addResult({
-                        title: `[상수관로] ${p.id}`,
-                        name: p.id,
-                        category: '상수관로',
-                        road: `구경 D${p.dia || '-'}mm, 재질 ${p.mat || '-'}, 연장 ${p.len || '-'}m`,
-                        parcel: `관로 ID: ${p.id}`,
-                        lat: mid[0],
-                        lng: mid[1],
-                        coordinates: coords,
-                        facilityType: 'PIPE',
-                        facilityId: p.id,
-                        dia: p.dia,
-                        material: p.mat,
-                        length: p.len,
-                        source: '김해 GIS 관로대장'
-                    });
-                }
-            }
-        }
-
-        // 7. 김해 GIS 전역 사전 색인 (주요 관공서 및 기준점)
+        // 4-1. 전역 색인의 주요 관광지/유적지/랜드마크
         if (typeof GIMHAE_GIS_INDEX !== 'undefined' && Array.isArray(GIMHAE_GIS_INDEX)) {
             GIMHAE_GIS_INDEX.forEach(item => {
-                const titleMatch = (item.title || '').toLowerCase().replace(/\s+/g, '').includes(cleanQ);
-                const roadMatch = (item.road || '').toLowerCase().replace(/\s+/g, '').includes(cleanQ);
-                const parcelMatch = (item.parcel || '').toLowerCase().replace(/\s+/g, '').includes(cleanQ);
-                const blockMatch = (item.block || '').toLowerCase().replace(/\s+/g, '').includes(cleanQ);
-                if (titleMatch || roadMatch || parcelMatch || blockMatch) {
-                    addResult({
-                        ...item,
-                        source: '김해 GIS 색인'
-                    });
+                const isPOI = item.category === '관광지' || item.category === '유적지' || item.category === '문화시설' || item.category === '산업단지' || item.category === '공원';
+                if (isPOI) {
+                    const titleMatch = (item.title || '').toLowerCase().replace(/\s+/g, '').includes(cleanQ);
+                    const bldMatch = (item.bldnm || '').toLowerCase().replace(/\s+/g, '').includes(cleanQ);
+                    if (titleMatch || bldMatch) {
+                        addCandidate({
+                            ...item,
+                            title: `[${item.category}] ${item.title}`,
+                            source: '김해 랜드마크'
+                        }, 'POI', 300, item.title);
+                    }
                 }
             });
         }
 
-        // 7-2. 김해시 부과수용가 55,699건 전수 색인 (상호명, 가게, 공장, 도로명주소, 지번주소 초고속 매칭)
+        // 4-2. 부과수용가 상호/가게/공장명 검색 (상위 5건만 엄선)
         if (gis.billingConsumers && Array.isArray(gis.billingConsumers) && cleanQ.length >= 2) {
-            let bCount = 0;
+            let storeCount = 0;
             const bLen = gis.billingConsumers.length;
-            for (let i = 0; i < bLen && bCount < 15; i++) {
+            for (let i = 0; i < bLen && storeCount < 5; i++) {
                 const b = gis.billingConsumers[i];
                 const name = b.name || '';
-                const addr = b.addr || '';
-                const oaddr = b.oaddr || '';
-                const cno = b.cno || '';
-                
                 const cleanName = name.toLowerCase().replace(/\s+/g, '');
-                const cleanAddr = addr.toLowerCase().replace(/\s+/g, '');
-                const cleanOaddr = oaddr.toLowerCase().replace(/\s+/g, '');
-                const cleanCno = cno.toLowerCase().replace(/\s+/g, '');
-
-                if (cleanName.includes(cleanQ) || cleanAddr.includes(cleanQ) || cleanOaddr.includes(cleanQ) || cleanCno.includes(cleanQ)) {
-                    bCount++;
-                    const isStore = !cleanName.includes('아파트') && !cleanName.includes('주택') && cleanName.length > 0;
-                    addResult({
-                        title: name ? `[상호] ${name}` : (addr || oaddr),
-                        name: name || addr,
-                        category: isStore ? '상호/지명' : (addr ? '도로명주소' : '지번주소'),
-                        road: addr || oaddr,
-                        parcel: oaddr || addr,
-                        bldnm: name,
+                if (cleanName.includes(cleanQ) && !cleanName.includes('아파트') && cleanName.length > 0) {
+                    storeCount++;
+                    addCandidate({
+                        title: `[상호] ${name}`,
+                        name: name,
+                        category: '상호/지명',
+                        road: b.addr || b.oaddr,
+                        parcel: b.oaddr || b.addr,
                         lat: b.lat,
                         lng: b.lng,
                         block: b.block || this.findNearestBlockName(b.lat, b.lng),
                         facilityType: 'CONSUMER',
                         facilityId: b.cno || '',
-                        source: '김해 수용가대장 (현장 주소/지명)'
-                    });
+                        source: '김해 상호대장'
+                    }, 'POI', 300, name);
                 }
             }
         }
 
-        // 8. 국토교통부 VWorld 오픈API 2.0 비동기 호출 (도로명 / 지번 주소)
-        try {
-            const vworldResults = await this.queryVWorldSearchApi(q);
-            if (Array.isArray(vworldResults)) {
-                vworldResults.forEach(v => addResult(v));
-            }
-        } catch (err) {
-            console.warn('[VWorld API] 검색 중단 (로컬 GIS 색인으로 표출):', err);
-        }
+        // 최종 정렬: _score(우선순위 + 정확도) 내림차순 정렬 후 최상위 12개만 표출
+        candidates.sort((a, b) => (b._score || 0) - (a._score || 0));
 
-        // 9. 공공 오픈 Geocoder (Nominatim API - VWorld 장애 시 자동 보조 백업)
-        if (results.length < 5 && cleanQ.length >= 2) {
-            try {
-                const nomQuery = cleanQ.includes('김해') ? cleanQ : `김해시 ${cleanQ}`;
-                const nomUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(nomQuery)}&limit=5&countrycodes=kr`;
-                const nomRes = await fetch(nomUrl, { headers: { 'Accept-Language': 'ko' } });
-                if (nomRes.ok) {
-                    const nomData = await nomRes.json();
-                    if (Array.isArray(nomData)) {
-                        nomData.forEach(item => {
-                            const lat = parseFloat(item.lat);
-                            const lng = parseFloat(item.lon);
-                            if (lat >= 35.1 && lat <= 35.45 && lng >= 128.65 && lng <= 129.1) {
-                                const displayName = item.display_name.split(',')[0];
-                                addResult({
-                                    title: `[장소] ${displayName}`,
-                                    name: displayName,
-                                    category: '지명/장소',
-                                    road: item.display_name,
-                                    parcel: item.display_name,
-                                    lat: lat,
-                                    lng: lng,
-                                    block: this.findNearestBlockName(lat, lng),
-                                    source: '공공 오픈 지오코더'
-                                });
-                            }
-                        });
-                    }
-                }
-            } catch (e) {}
-        }
-
-        return results.slice(0, 20);
+        return candidates.slice(0, 12);
     }
 
     /**
