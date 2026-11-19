@@ -10070,6 +10070,45 @@ body.theme-navy .glc-size-num {
     color: #60A5FA;
 }
 
+/* GIS 레이어 하위목록 색상 선택 및 라벨 필드 선택 드롭다운 */
+.glc-color-select {
+    padding: 1px 4px;
+    font-size: 11px;
+    font-weight: 600;
+    border: 1px solid #CBD5E1;
+    border-radius: 4px;
+    background: #FFFFFF;
+    color: #1E293B;
+    outline: none;
+    cursor: pointer;
+    margin-left: auto;
+    height: 22px;
+}
+body.theme-navy .glc-color-select {
+    background: #1E293B;
+    border-color: #475569;
+    color: #F1F5F9;
+}
+
+.glc-label-field-select {
+    width: 100%;
+    padding: 2px 6px;
+    font-size: 10.5px;
+    border: 1px solid #CBD5E1;
+    border-radius: 4px;
+    background: #FFFFFF;
+    color: #1E293B;
+    outline: none;
+    cursor: pointer;
+    margin-top: 4px;
+    height: 24px;
+}
+body.theme-navy .glc-label-field-select {
+    background: #1E293B;
+    border-color: #475569;
+    color: #F1F5F9;
+}
+
 /* ========================================================================= */
 /* 지도 우측 상단 툴바 그룹 및 모바일 반응형 접기/펼치기                    */
 /* ========================================================================= */
