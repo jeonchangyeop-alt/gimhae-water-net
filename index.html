@@ -1646,7 +1646,7 @@
                             <div class="vsm-kbd-badge" title="단축키 안내">
                                 <kbd>Ctrl</kbd>+<kbd>F</kbd>
                             </div>
-                            <button type="button" id="btnVsmClose" class="vsm-close-btn" title="닫기 (ESC)">
+                            <button type="button" id="btnVsmClose" class="vsm-close-btn" title="닫기 (ESC)" onclick="if(typeof window.closeAddressSearchModal === 'function') window.closeAddressSearchModal(event);">
                                 <i class="fa-solid fa-xmark"></i>
                             </button>
                         </div>
@@ -1809,7 +1809,7 @@
                         <i class="fa-solid fa-clipboard-list" style="color:var(--primary);"></i>
                         <span id="sidePanelMainTitle">관망 DB 및 현장 정보</span>
                     </div>
-                    <button id="btnClosePanel" class="btn-close-panel" title="패널 닫기">&times;</button>
+                    <button id="btnClosePanel" class="btn-close-panel" title="패널 닫기" onclick="if(typeof window.closeSidePanel === 'function') window.closeSidePanel(event);"><i class="fa-solid fa-xmark"></i></button>
                 </div>
 
                 <div class="panel-tabs">
@@ -1848,7 +1848,7 @@
                                     <button type="button" class="btn-rv-dock-action" id="btnRvDockOpenNewTab" title="새 탭으로 크게 보기">
                                         <i class="fa-solid fa-arrow-up-right-from-square"></i>
                                     </button>
-                                    <button type="button" class="btn-rv-dock-action btn-rv-dock-close" id="btnRvDockClose" title="로드뷰 닫기">
+                                    <button type="button" class="btn-rv-dock-action btn-rv-dock-close" id="btnRvDockClose" title="로드뷰 닫기" onclick="if(window.mapManager && typeof window.mapManager.closeDockedRoadview === 'function') window.mapManager.closeDockedRoadview(event);">
                                         <i class="fa-solid fa-xmark"></i>
                                     </button>
                                 </div>

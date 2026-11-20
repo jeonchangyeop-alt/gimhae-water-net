@@ -4985,7 +4985,13 @@ function initUIEvents() {
         console.warn("[App] URL 파라미터 파싱 무시:", e);
     }
 
-    document.getElementById('btnClosePanel').addEventListener('click', closeSidePanel);
+    const btnCloseP = document.getElementById('btnClosePanel');
+    if (btnCloseP) {
+        btnCloseP.onclick = closeSidePanel;
+        btnCloseP.addEventListener('click', closeSidePanel);
+        btnCloseP.addEventListener('pointerup', closeSidePanel);
+        btnCloseP.addEventListener('touchend', closeSidePanel);
+    }
 
     document.getElementById('inputFacilitySearch').addEventListener('input', (e) => {
         renderFacilityList(e.target.value);
@@ -5067,7 +5073,10 @@ function openSidePanel() {
 }
 window.openSidePanel = openSidePanel;
 
-function closeSidePanel() {
+function closeSidePanel(e) {
+    if (e && typeof e.stopPropagation === 'function') {
+        e.stopPropagation();
+    }
     const sidePanel = document.getElementById('sidePanel');
     if (sidePanel) sidePanel.classList.add('collapsed');
     const mainContent = document.querySelector('.main-content');
@@ -5077,6 +5086,17 @@ function closeSidePanel() {
         toggleBtn.classList.add('panel-collapsed');
         toggleBtn.innerHTML = '<i class="fa-solid fa-clipboard-list"></i> <span id="floatingPanelText">조사·DB 패널</span>';
     }
+
+    // [사용자 요구사항] 패널을 닫았을 때 관망에 표현된 위치아이콘(핀/마커) 및 블록 하이라이트 즉시 제거
+    if (window.mapManager) {
+        if (typeof window.mapManager.clearVerificationMarker === 'function') {
+            window.mapManager.clearVerificationMarker();
+        }
+        if (typeof window.mapManager.clearBlockHighlight === 'function') {
+            window.mapManager.clearBlockHighlight();
+        }
+    }
+
     setTimeout(() => {
         if (window.mapManager && window.mapManager.map) {
             window.mapManager.map.invalidateSize();
@@ -5520,6 +5540,11 @@ function initVWorldMapControls() {
     let searchDebounceTimer = null;
 
     const openSearchModal = () => {
+        // 관망도 화면이 아니면 먼저 관망도(3. 공종관리 GIS) 화면으로 전환
+        if (typeof switchMainView === 'function' && currentMainView !== 'MAP') {
+            switchMainView('MAP');
+        }
+
         if (!searchBackdrop) return;
         searchBackdrop.style.display = 'flex';
         if (btnMapSearchToggle) btnMapSearchToggle.classList.add('active');
@@ -5528,29 +5553,39 @@ function initVWorldMapControls() {
                 addrInput.focus();
                 addrInput.select();
             }
-        }, 60);
+        }, 80);
     };
     window.openAddressSearchModal = openSearchModal;
-    window.closeAddressSearchModal = closeSearchModal;
 
-    const closeSearchModal = () => {
+    const closeSearchModal = (e) => {
+        if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
+        if (e && typeof e.preventDefault === 'function') e.preventDefault();
         if (!searchBackdrop) return;
         searchBackdrop.style.display = 'none';
+        if (dropdown) dropdown.style.display = 'none';
+        if (addrInput) addrInput.blur();
         if (btnMapSearchToggle) btnMapSearchToggle.classList.remove('active');
     };
+    window.closeAddressSearchModal = closeSearchModal;
 
-    // Global 단축키: Ctrl + F (Mac은 Cmd + F), ESC 닫기
-    document.addEventListener('keydown', (e) => {
-        if ((e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'F')) {
+    // Global 단축키: Ctrl + F (Mac은 Cmd + F, 한글 'ㄹ' 대응), ESC 닫기
+    const handleGlobalSearchKey = (e) => {
+        if ((e.ctrlKey || e.metaKey) && (e.code === 'KeyF' || e.key === 'f' || e.key === 'F' || e.key === 'ㄹ')) {
             e.preventDefault();
+            e.stopPropagation();
             const isOpen = searchBackdrop && searchBackdrop.style.display === 'flex';
             if (isOpen) {
-                if (addrInput) addrInput.focus();
+                if (addrInput) {
+                    addrInput.focus();
+                    addrInput.select();
+                }
             } else {
                 openSearchModal();
             }
         } else if (e.key === 'Escape') {
-            if (searchBackdrop && searchBackdrop.style.display === 'flex') {
+            const isOpen = searchBackdrop && searchBackdrop.style.display === 'flex';
+            if (isOpen) {
+                e.preventDefault();
                 closeSearchModal();
             }
             if (mapManager && typeof mapManager.closeDockedRoadview === 'function') {
@@ -5563,13 +5598,15 @@ function initVWorldMapControls() {
                 }
             }
         }
-    });
+    };
+    window.addEventListener('keydown', handleGlobalSearchKey, true);
+    document.addEventListener('keydown', handleGlobalSearchKey);
 
     if (btnMapSearchToggle) {
         btnMapSearchToggle.onclick = (e) => {
-            if (e) e.stopPropagation();
+            if (e) { e.preventDefault(); e.stopPropagation(); }
             const isOpen = searchBackdrop && searchBackdrop.style.display === 'flex';
-            if (isOpen) closeSearchModal();
+            if (isOpen) closeSearchModal(e);
             else openSearchModal();
         };
         btnMapSearchToggle.addEventListener('pointerdown', (e) => {
@@ -5578,13 +5615,19 @@ function initVWorldMapControls() {
     }
 
     if (btnVsmClose) {
+        btnVsmClose.onclick = (e) => {
+            if (e) { e.preventDefault(); e.stopPropagation(); }
+            closeSearchModal(e);
+        };
         btnVsmClose.addEventListener('click', closeSearchModal);
+        btnVsmClose.addEventListener('pointerup', closeSearchModal);
+        btnVsmClose.addEventListener('touchend', closeSearchModal);
     }
 
     if (searchBackdrop) {
         searchBackdrop.addEventListener('click', (e) => {
             if (e.target === searchBackdrop) {
-                closeSearchModal();
+                closeSearchModal(e);
             }
         });
     }
@@ -5680,6 +5723,12 @@ function initVWorldMapControls() {
                     } else if (item.category === '상수도관로' || item.facilityType === 'PIPE') {
                         catIcon = '<i class="fa-solid fa-arrows-left-right"></i>';
                         catClass = 'cat-pipe';
+                    } else if (item.category === '상호/지명' || item._type === 'STORE' || item.source?.includes('상호')) {
+                        catIcon = '<i class="fa-solid fa-store"></i>';
+                        catClass = 'cat-office';
+                    } else if (item._type === 'POI' || item.category?.includes('장소') || item.category?.includes('랜드마크')) {
+                        catIcon = '<i class="fa-solid fa-map-location-dot"></i>';
+                        catClass = 'cat-office';
                     }
 
                     return `
