@@ -564,6 +564,14 @@ async function parseSupplyExcelFiles(files) {
             console.error("공급량 파싱 에러:", f.name, e);
         }
     }
+
+    // 공급량 파싱 후 전체 블록 목록 자동 갱신
+    const blockSet = new Set(window.GlobalWaterData.blocks || []);
+    Object.keys(window.GlobalWaterData.supplyData || {}).forEach(d => {
+        Object.keys(window.GlobalWaterData.supplyData[d] || {}).forEach(b => blockSet.add(b));
+    });
+    window.GlobalWaterData.blocks = Array.from(blockSet);
+
     updateCloudInspectorUI();
     return loadedDays;
 }
@@ -694,6 +702,23 @@ async function parseTargetExcelFile(file) {
  * 초기화 및 이벤트 리스너 등록
  */
 document.addEventListener('DOMContentLoaded', async () => {
+    // 0. 로컬 시드(data/firebase_state.json) 우선 로드 (네트워크 지연/오프라인 방지 및 0.01초 초고속 시작)
+    if (!window.GlobalWaterData.supplyData || Object.keys(window.GlobalWaterData.supplyData).length === 0) {
+        try {
+            const resp = await fetch('data/firebase_state.json');
+            if (resp.ok) {
+                const localState = await resp.json();
+                Object.assign(window.GlobalWaterData, localState);
+                console.log(`[CloudSync] 로컬 초기 시드 로드 완료: 공급량 ${Object.keys(localState.supplyData || {}).length}일분, 부과량 ${Object.keys(localState.chargeData || {}).length}개월분, ${localState.blocks?.length || 0}개 블록`);
+                if (typeof window.onCloudDataRefreshed === 'function') {
+                    window.onCloudDataRefreshed();
+                }
+            }
+        } catch (e) {
+            console.warn("[CloudSync] 로컬 시드 fetch 생략:", e);
+        }
+    }
+
     // 1. Firebase SDK 초기화
     try {
         if (typeof firebase !== 'undefined') {

@@ -576,23 +576,79 @@ function renderDashboardSupply() {
     if (activeDates.length === 0) activeDates = allDates.slice(-30);
     currentActiveSupplyDates = activeDates;
 
-    // 블록 리스트 도출
-    let blocks = [];
-    if (window.GlobalWaterData && window.GlobalWaterData.blocks && window.GlobalWaterData.blocks.length > 0) {
-        blocks = [...window.GlobalWaterData.blocks];
-    } else if (window.GlobalWaterData && window.GlobalWaterData.supplyData) {
-        const set = new Set();
-        activeDates.forEach(d => {
-            Object.keys(window.GlobalWaterData.supplyData[d] || {}).forEach(b => set.add(b));
+    // 블록 리스트 도출 (김해시 131개 전체 소블록/중블록/배수지 완전 통합 추출)
+    const blockSet = new Set();
+
+    // 1. 김해시 전체 표준/검증 블록 목록 (131개 소블록/중블록/배수지)
+    if (typeof getAllYieldReportBlocks === 'function') {
+        getAllYieldReportBlocks().forEach(b => {
+            if (b && !['W', 'w', 'undefined', 'null', 'B1', 'B7', 'B8', '비어있음'].includes(b)) {
+                blockSet.add(b);
+            }
         });
-        blocks = Array.from(set);
     }
 
-    if (blocks.length === 0) {
-        blocks = ['구산1', '구산2', '구산3', '구산4', '금음마을', '내덕지구', '내외1', '내외2', '내외3', '내외4', '내외5', '대동', '북부1', '북부2', '삼계1', '삼계2', '삼안1', '활천1', '활천2'];
+    // 2. 검증 데이터셋(VERIFIED_YIELD_DATA)의 모든 블록
+    if (window.VERIFIED_YIELD_DATA) {
+        Object.keys(window.VERIFIED_YIELD_DATA).forEach(b => {
+            if (b && !['W', 'w', 'undefined', 'null', 'B1', 'B7', 'B8', '비어있음'].includes(b)) {
+                blockSet.add(b);
+            }
+        });
     }
 
-    blocks = blocks.filter(b => b && !['W', 'w', 'undefined', 'null', '비어있음'].includes(b))
+    // 3. 클라우드 전역 객체 블록 목록
+    if (window.GlobalWaterData && Array.isArray(window.GlobalWaterData.blocks)) {
+        window.GlobalWaterData.blocks.forEach(b => {
+            if (b && !['W', 'w', 'undefined', 'null', 'B1', 'B7', 'B8', '비어있음'].includes(b)) {
+                blockSet.add(b);
+            }
+        });
+    }
+
+    // 4. 공급량 데이터의 전체 날짜에서 측정된 모든 블록 (활성 기간뿐 아니라 전체 601일 날짜)
+    if (window.GlobalWaterData && window.GlobalWaterData.supplyData) {
+        Object.keys(window.GlobalWaterData.supplyData).forEach(d => {
+            Object.keys(window.GlobalWaterData.supplyData[d] || {}).forEach(b => {
+                if (b && !['W', 'w', 'undefined', 'null', 'B1', 'B7', 'B8', '비어있음'].includes(b)) {
+                    blockSet.add(b);
+                }
+            });
+        });
+    }
+
+    // 5. 부과량 수용가 데이터셋의 블록 목록
+    if (window.CONSUMER_CHARGE_DATA && window.CONSUMER_CHARGE_DATA.blocks) {
+        Object.keys(window.CONSUMER_CHARGE_DATA.blocks).forEach(b => {
+            if (b && !['W', 'w', 'undefined', 'null', 'B1', 'B7', 'B8', '비어있음'].includes(b)) {
+                blockSet.add(b);
+            }
+        });
+    }
+
+    // 6. 기본 필수 소블록 보장
+    const defaultEssentialBlocks = [
+        '감노', '구산1', '구산2', '구산3', '구산4',
+        '금음마을', '내덕지구', '내외1', '내외2', '내외3', '내외4', '내외5', '내외6', '내외7', '내외8',
+        '대감1', '대감2', '대동1', '대동2', '대동3', '대동4', '대동5', '대동6', '대동배수지', '대동산단1', '대동산단2', '대동산단3', '대동산단4', '대동첨단',
+        '덕산정수장(대동라인)', '덕산정수장(상동라인)', '동명', '동상1', '동상2', '동지역직결',
+        '명동정수장(메인)', '명동정수장(장유라인)', '명동정수장(진영라인)', '명동산단', '망천직결',
+        '병동농공', '부봉지구', '부원6', '부원7-1', '부원7-2', '부원7-3', '부원8',
+        '북부1', '북부2', '북부3', '북부4', '북부5', '북부6',
+        '불암1', '불암2', '불암3', '불암4', '불암5', '불암6',
+        '삼계1', '삼계2', '삼계정수장(동지역직결)', '삼안1', '삼안2', '삼안3', '삼안4', '삼안5', '삼안6', '삼어지구',
+        '상동1', '상동1배수지', '상동2', '상동2배수지', '상동3', '서김해산단',
+        '생림1', '생림2', '생림3', '생림배수지', '신천산단배수지', '안동', '어방배수지', '어방지구', '예안', '율하2', '율하배수지',
+        '장방', '장유1', '장유2', '장유3', '장유4', '장유5', '장유6', '장유7', '장유8', '장유9', '장유고지배수지',
+        '주동', '주촌1', '주촌2', '주촌3', '주촌4', '주촌5', '주촌6', '주촌7', '주촌직결2',
+        '진례직결', '진영1', '진영2', '진영3', '진영3-7', '진영4', '진영5', '진영6', '진영7', '진영구', '진영배수지',
+        '칠산서부1', '칠산서부2', '칠산서부3',
+        '한림직결1', '한림직결2', '한림직결3', '한림직결4', '한림직결5',
+        '활천1', '활천2', '활천3', '활천4', '활천5'
+    ];
+    defaultEssentialBlocks.forEach(b => blockSet.add(b));
+
+    let blocks = Array.from(blockSet).filter(b => b && !['W', 'w', 'undefined', 'null', 'B1', 'B7', 'B8', '비어있음'].includes(b))
                   .sort((a, b) => a.localeCompare(b, 'ko', { numeric: true }));
 
     // 검색창 키워드 필터
@@ -1226,19 +1282,19 @@ let isChargeEventsBound = false;
 
 /**
  * 0톤 수용가 연속 개월수 판정 함수
- * m2607: 최근 1개월, m2606: 2개월, m2605: 3개월
+ * m3: 최근 1개월, m2: 2개월, m1: 3개월
  */
 function getZeroMonthsInfo(c) {
-    const m7 = Number(c.m2607 !== undefined ? c.m2607 : (c.m7 || 0));
-    const m6 = Number(c.m2606 !== undefined ? c.m2606 : (c.m6 || 0));
-    const m5 = Number(c.m2605 !== undefined ? c.m2605 : (c.m5 || 0));
+    const mLatest = Number(c.m3 !== undefined ? c.m3 : (c.m2611 !== undefined ? c.m2611 : (c.m2607 !== undefined ? c.m2607 : (c.m7 || 0))));
+    const mMid = Number(c.m2 !== undefined ? c.m2 : (c.m2610 !== undefined ? c.m2610 : (c.m2606 !== undefined ? c.m2606 : (c.m6 || 0))));
+    const mOld = Number(c.m1 !== undefined ? c.m1 : (c.m2609 !== undefined ? c.m2609 : (c.m2605 !== undefined ? c.m2605 : (c.m5 || 0))));
 
     let count = 0;
-    if (m7 <= 0) {
+    if (mLatest <= 0) {
         count = 1;
-        if (m6 <= 0) {
+        if (mMid <= 0) {
             count = 2;
-            if (m5 <= 0) {
+            if (mOld <= 0) {
                 count = 3;
             }
         }
@@ -1246,25 +1302,25 @@ function getZeroMonthsInfo(c) {
 
     return {
         count: count,
-        isZero1M: m7 <= 0,
-        isZero2M: (m7 <= 0 && m6 <= 0),
-        isZero3M: (m7 <= 0 && m6 <= 0 && m5 <= 0),
+        isZero1M: mLatest <= 0,
+        isZero2M: (mLatest <= 0 && mMid <= 0),
+        isZero3M: (mLatest <= 0 && mMid <= 0 && mOld <= 0),
         // 데이터가 3개월분이므로 3개월 연속 0톤이면 6개월 연속 필터에도 장기 0톤으로 매칭
-        isZero6M: (m7 <= 0 && m6 <= 0 && m5 <= 0)
+        isZero6M: (mLatest <= 0 && mMid <= 0 && mOld <= 0)
     };
 }
 
 /**
  * 이상수용가(급증/급감) 판정 함수
- * 직전 2개월(5월, 6월) 평균 대비 최근월(7월) 사용량 비교
+ * 직전 2개월 평균 대비 최근월 사용량 비교
  */
 function getAbnormalUsageInfo(c) {
-    const m7 = Number(c.m2607 !== undefined ? c.m2607 : (c.m7 || 0));
-    const m6 = Number(c.m2606 !== undefined ? c.m2606 : (c.m6 || 0));
-    const m5 = Number(c.m2605 !== undefined ? c.m2605 : (c.m5 || 0));
+    const mLatest = Number(c.m3 !== undefined ? c.m3 : (c.m2611 !== undefined ? c.m2611 : (c.m2607 !== undefined ? c.m2607 : (c.m7 || 0))));
+    const mMid = Number(c.m2 !== undefined ? c.m2 : (c.m2610 !== undefined ? c.m2610 : (c.m2606 !== undefined ? c.m2606 : (c.m6 || 0))));
+    const mOld = Number(c.m1 !== undefined ? c.m1 : (c.m2609 !== undefined ? c.m2609 : (c.m2605 !== undefined ? c.m2605 : (c.m5 || 0))));
 
-    const avgPrev = (m5 + m6) / 2;
-    const diff = m7 - avgPrev;
+    const avgPrev = (mOld + mMid) / 2;
+    const diff = mLatest - avgPrev;
 
     // 1. 급증 수용가 (Surge): 직전 평균 대비 +80% 이상 급증 & 월 10톤 이상 차이
     if (avgPrev > 0 && diff >= 10 && (diff / avgPrev) >= 0.8) {
@@ -1274,17 +1330,17 @@ function getAbnormalUsageInfo(c) {
             ratio: ratio,
             diff: Math.round(diff * 10) / 10,
             avgPrev: Math.round(avgPrev * 10) / 10,
-            latest: m7,
+            latest: mLatest,
             desc: `급증 +${ratio}% (누수의심/용도변경)`
         };
-    } else if (avgPrev === 0 && m7 >= 20) {
+    } else if (avgPrev === 0 && mLatest >= 20) {
         return {
             type: 'SURGE',
             ratio: 999,
-            diff: m7,
+            diff: mLatest,
             avgPrev: 0,
-            latest: m7,
-            desc: `신규급증 +${m7}m³ (신규입주/누수)`
+            latest: mLatest,
+            desc: `신규급증 +${mLatest}m³ (신규입주/누수)`
         };
     }
 
@@ -1296,7 +1352,7 @@ function getAbnormalUsageInfo(c) {
             ratio: ratio,
             diff: Math.round(diff * 10) / 10,
             avgPrev: Math.round(avgPrev * 10) / 10,
-            latest: m7,
+            latest: mLatest,
             desc: `급감 ${ratio}% (계량기고장/불감수량)`
         };
     }
@@ -1306,7 +1362,7 @@ function getAbnormalUsageInfo(c) {
         ratio: 0,
         diff: 0,
         avgPrev: Math.round(avgPrev * 10) / 10,
-        latest: m7,
+        latest: mLatest,
         desc: '정상'
     };
 }
@@ -1407,6 +1463,18 @@ async function renderDashboardCharge() {
         blockSelect.innerHTML = `<option value="ALL">전체</option>` + sortedBlocks.map(b => `<option value="${b}">${b}</option>`).join('');
     }
     if (blockSelect) blockSelect.value = currentChargeBlock;
+
+    // 3-1. 버전 뱃지 및 테이블 월별 헤더 동적 동기화
+    const versionBadge = document.getElementById('chargeDataVersionBadge');
+    const tableMonthHeader = document.getElementById('chargeTableMonthHeader');
+    const chargeMonths = data.months || ['2026.09', '2026.10', '2026.11'];
+    if (chargeMonths && chargeMonths.length >= 3) {
+        const mStart = chargeMonths[0].replace('20', '');
+        const mEnd = chargeMonths[2].replace('20', '');
+        const endMonthNum = mEnd.split('.')[1] || mEnd;
+        if (versionBadge) versionBadge.textContent = `최근 3개월 (${mStart} ~ ${endMonthNum})`;
+        if (tableMonthHeader) tableMonthHeader.textContent = `${chargeMonths[0]} | ${chargeMonths[1]} | ${chargeMonths[2]}`;
+    }
 
     // 4. 이벤트 리스너 바인딩 (최초 1회)
     setupChargeEventListeners();
@@ -1983,23 +2051,28 @@ function renderChargeConsumerTable() {
         if (ab.type === 'DROP') tagsHtml += `<span class="tag-abnormal-drop">급감</span>`;
         if (isAll) tagsHtml += `<span style="font-size:10px; font-weight:600; padding:1px 5px; border-radius:3px; background:#F1F5F9; color:#475569; margin-left:5px; border:1px solid #CBD5E1;">${c.block}</span>`;
 
-        // 월별 사용량 표현: 2026.05 | 2026.06 | 2026.07
-        const m5 = Number(c.m2605 || 0);
-        const m6 = Number(c.m2606 || 0);
-        const m7 = Number(c.m2607 || 0);
+        // 월별 사용량 표현 (동적 3개월 지원)
+        const dMonths = (consumerChargeData && consumerChargeData.months) || ['2026.09', '2026.10', '2026.11'];
+        const m1Key = dMonths[0] ? 'm' + dMonths[0].replace('.', '') : 'm2609';
+        const m2Key = dMonths[1] ? 'm' + dMonths[1].replace('.', '') : 'm2610';
+        const m3Key = dMonths[2] ? 'm' + dMonths[2].replace('.', '') : 'm2611';
 
-        const m5Color = m5 === 0 ? '#DC2626' : '#334155';
-        const m6Color = m6 === 0 ? '#DC2626' : '#334155';
-        const m7Color = m7 === 0 ? '#DC2626' : '#059669';
+        const m1Val = Number(c[m1Key] !== undefined ? c[m1Key] : (c.m1 !== undefined ? c.m1 : (c.m2605 || 0)));
+        const m2Val = Number(c[m2Key] !== undefined ? c[m2Key] : (c.m2 !== undefined ? c.m2 : (c.m2606 || 0)));
+        const m3Val = Number(c[m3Key] !== undefined ? c[m3Key] : (c.m3 !== undefined ? c.m3 : (c.m2607 || 0)));
+
+        const m1Color = m1Val === 0 ? '#DC2626' : '#334155';
+        const m2Color = m2Val === 0 ? '#DC2626' : '#334155';
+        const m3Color = m3Val === 0 ? '#DC2626' : '#059669';
 
         const monthlyStripHtml = `
             <div class="usage-monthly-cell">
                 <div class="usage-monthly-strip">
-                    <span class="m-val" style="color:${m5Color};" title="2026.05: ${m5.toLocaleString()} m³">${m5.toLocaleString()}</span>
+                    <span class="m-val" style="color:${m1Color};" title="${dMonths[0]}: ${m1Val.toLocaleString()} m³">${m1Val.toLocaleString()}</span>
                     <span class="m-sep">|</span>
-                    <span class="m-val" style="color:${m6Color};" title="2026.06: ${m6.toLocaleString()} m³">${m6.toLocaleString()}</span>
+                    <span class="m-val" style="color:${m2Color};" title="${dMonths[1]}: ${m2Val.toLocaleString()} m³">${m2Val.toLocaleString()}</span>
                     <span class="m-sep">|</span>
-                    <span class="m-val m-latest" style="color:${m7Color};" title="2026.07: ${m7.toLocaleString()} m³">${m7.toLocaleString()} m³</span>
+                    <span class="m-val m-latest" style="color:${m3Color};" title="${dMonths[2]}: ${m3Val.toLocaleString()} m³">${m3Val.toLocaleString()} m³</span>
                 </div>
                 <div style="font-size:10px; color:#64748B; margin-top:2px;">
                     3개월: ${Math.round(c.total3m).toLocaleString()} m³ (일평균 ${c.dailyUsage.toLocaleString()} m³)
@@ -2114,6 +2187,14 @@ function renderChargeDetailPanel() {
             const zText = c.zInfo.count >= 3 ? '3개월 연속 0톤 (폐전의심)' : `${c.zInfo.count}개월 연속 0톤`;
             const blockPrefix = isAll ? `<span style="font-weight:700; color:#334155; margin-right:4px;">[${c.block}]</span>` : '';
 
+            const mArr = (consumerChargeData && consumerChargeData.months) || ['2026.09', '2026.10', '2026.11'];
+            const l1 = (mArr[0].split('.')[1] || '9') + '월';
+            const l2 = (mArr[1].split('.')[1] || '10') + '월';
+            const l3 = (mArr[2].split('.')[1] || '11') + '월';
+            const v1 = c.m1 !== undefined ? c.m1 : (c.m2609 !== undefined ? c.m2609 : (c.m2605 || 0));
+            const v2 = c.m2 !== undefined ? c.m2 : (c.m2610 !== undefined ? c.m2610 : (c.m2606 || 0));
+            const v3 = c.m3 !== undefined ? c.m3 : (c.m2611 !== undefined ? c.m2611 : (c.m2607 || 0));
+
             html += `
                 <div class="caliber-issue-item" data-cno="${c.cNo}" data-block="${c.block}" style="border-left: 4px solid #DC2626; background:#FEF2F2;" title="클릭 시 좌측 표에서 [${c.name}] 상세 보기">
                     <div class="lci-left">
@@ -2128,7 +2209,7 @@ function renderChargeDetailPanel() {
                     </div>
                     <div class="lci-right">
                         <div class="lci-usage" style="color:#DC2626;">0 m³/일</div>
-                        <div class="lci-total3m" style="color:#64748B; font-size:10.5px;">5월:${c.m2605} | 6월:${c.m2606} | 7월:${c.m2607}m³</div>
+                        <div class="lci-total3m" style="color:#64748B; font-size:10.5px;">${l1}:${v1} | ${l2}:${v2} | ${l3}:${v3}m³</div>
                         <div style="font-size:10px; color:#DC2626; font-weight:600; margin-top:2px;"><i class="fa-solid fa-arrow-left"></i> 좌측 표 조회</div>
                     </div>
                 </div>
@@ -2290,9 +2371,17 @@ function exportConsumerChargeExcel() {
         exportList = exportList.filter(c => c.evalType === 'undersized');
     }
 
+    const exMonths = (consumerChargeData && consumerChargeData.months) || ['2026.09', '2026.10', '2026.11'];
+    const col1 = `${exMonths[0].replace('.', '년')}월(m³)`;
+    const col2 = `${exMonths[1].replace('.', '년')}월(m³)`;
+    const col3 = `${exMonths[2].replace('.', '년')}월(m³)`;
+
     const excelRows = exportList.map((c, idx) => {
         const z = getZeroMonthsInfo(c);
         const ab = getAbnormalUsageInfo(c);
+        const v1 = c.m1 !== undefined ? c.m1 : (c.m2609 !== undefined ? c.m2609 : (c.m2605 || 0));
+        const v2 = c.m2 !== undefined ? c.m2 : (c.m2610 !== undefined ? c.m2610 : (c.m2606 || 0));
+        const v3 = c.m3 !== undefined ? c.m3 : (c.m2611 !== undefined ? c.m2611 : (c.m2607 || 0));
         return {
             "순번": idx + 1,
             "블록명": c.block,
@@ -2300,9 +2389,9 @@ function exportConsumerChargeExcel() {
             "수용가명": c.name,
             "업종": c.type,
             "설치구경(mm)": c.caliber,
-            "2026년05월(m³)": c.m2605,
-            "2026년06월(m³)": c.m2606,
-            "2026년07월(m³)": c.m2607,
+            [col1]: v1,
+            [col2]: v2,
+            [col3]: v3,
             "3개월합계(m³)": c.total3m,
             "최근일사용량(m³/일)": c.dailyUsage,
             "0톤연속상태": z.count > 0 ? `${z.count}개월 연속 0톤` : "정상사용",
