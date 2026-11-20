@@ -23,7 +23,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1"></script>
     <!-- 커스텀 스타일 -->
-    <link rel="stylesheet" href="css/style.css?v=20261119B">
+    <link rel="stylesheet" href="css/style.css?v=20261120A">
 </head>
 <body>
 
@@ -63,31 +63,38 @@
                 </button>
                 <div class="dropdown-content">
                     <div class="dropdown-header">유수율 전문 분석 대시보드</div>
+                    <a href="javascript:void(0)" class="dropdown-item" data-action="dash-overview">
+                        <i class="fa-solid fa-gauge-high" style="color:#0ea5e9;"></i>
+                        <div>
+                            <strong>0. 대시보드 (특이사항 알림)</strong>
+                            <small>매월 공급량·부과량·유수율 이상징후 종합 모니터링</small>
+                        </div>
+                    </a>
                     <a href="javascript:void(0)" class="dropdown-item" data-action="dash-supply">
                         <i class="fa-solid fa-faucet" style="color:#0284c7;"></i>
                         <div>
-                            <strong>공급량 분석</strong>
+                            <strong>1. 공급량 분석</strong>
                             <small>블록별 일공급량, 야간최소유량(MNF), 수압 분석</small>
                         </div>
                     </a>
                     <a href="javascript:void(0)" class="dropdown-item" data-action="dash-charge">
                         <i class="fa-solid fa-receipt" style="color:#10b981;"></i>
                         <div>
-                            <strong>부과량 현황</strong>
+                            <strong>2. 부과량 현황</strong>
                             <small>수용가 검침 사용량 집계 및 블록별 월간 부과량 현황</small>
                         </div>
                     </a>
                     <a href="javascript:void(0)" class="dropdown-item" data-action="dash-yield">
                         <i class="fa-solid fa-chart-line" style="color:#8b5cf6;"></i>
                         <div>
-                            <strong>유수율 리포트</strong>
+                            <strong>3. 유수율 리포트</strong>
                             <small>공급량 대비 부과량 산출 및 누수량·통합 유수율</small>
                         </div>
                     </a>
                     <a href="javascript:void(0)" class="dropdown-item" data-action="dash-target">
                         <i class="fa-solid fa-bullseye" style="color:#f59e0b;"></i>
                         <div>
-                            <strong>목표유수율 관리</strong>
+                            <strong>4. 목표유수율 관리</strong>
                             <small>기준/목표 유수율 달성·미달성 블록 필터 및 필요 MNF</small>
                         </div>
                     </a>
@@ -200,7 +207,10 @@
                 </div>
                 
                 <div class="dash-tab-nav">
-                    <button class="dash-tab-btn active" data-tab="dash-supply">
+                    <button class="dash-tab-btn active" data-tab="dash-overview">
+                        <i class="fa-solid fa-gauge-high"></i> 0. 대시보드
+                    </button>
+                    <button class="dash-tab-btn" data-tab="dash-supply">
                         <i class="fa-solid fa-faucet"></i> 1. 공급량 분석
                     </button>
                     <button class="dash-tab-btn" data-tab="dash-charge">
@@ -222,8 +232,250 @@
             </div>
 
             <div class="dashboard-scroll-body">
+                <!-- ============================================================== -->
+                <!-- [대시보드 0] 특이사항 종합 대시보드 (공급량 / 부과량 / 유수율) -->
+                <!-- ============================================================== -->
+                <section id="sectionDashOverview" class="dash-section active">
+                    <div class="overview-container">
+                        <!-- 1. 상단 툴바 및 필터 바 -->
+                        <div class="overview-toolbar">
+                            <div class="overview-title-group">
+                                <h3><i class="fa-solid fa-gauge-high" style="color:#0ea5e9;"></i> 0. 매월 특이사항 종합 관제</h3>
+                                <p class="overview-subdesc">공급량 통신·수압·야간최소 이상, 부과량 급증·0톤 수용가, 유수율 급변 블록 통합 모니터링</p>
+                            </div>
+                            <div class="overview-controls-group">
+                                <div class="filter-item-group">
+                                    <label for="overviewMonthSelect"><i class="fa-regular fa-calendar-check"></i> 분석 기준월:</label>
+                                    <select id="overviewMonthSelect" class="dash-select-sm" style="min-width:130px; font-weight:700; color:#0284c7;">
+                                        <!-- 자바스크립트에서 동적 생성 -->
+                                    </select>
+                                </div>
+                                <div class="overview-filter-pills">
+                                    <button class="ov-pill-btn active" data-filter="all">전체 (All)</button>
+                                    <button class="ov-pill-btn" data-filter="supply"><i class="fa-solid fa-faucet"></i> 공급량 이상</button>
+                                    <button class="ov-pill-btn" data-filter="charge"><i class="fa-solid fa-receipt"></i> 부과량 특이</button>
+                                    <button class="ov-pill-btn" data-filter="yield"><i class="fa-solid fa-chart-line"></i> 유수율 변동</button>
+                                </div>
+                                <button id="btnExportOverviewExcel" class="dash-btn-sm secondary" title="특이사항 전체 엑셀 다운로드">
+                                    <i class="fa-solid fa-file-excel" style="color:#10b981;"></i> 특이사항 엑셀 저장
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- 2. 상단 요약 KPI 바 -->
+                        <div class="overview-kpi-summary-bar">
+                            <div class="ov-kpi-card ov-kpi-supply" data-filter-target="supply" title="공급량 이상 세부항목 보기">
+                                <div class="ov-kpi-icon"><i class="fa-solid fa-faucet-drip"></i></div>
+                                <div class="ov-kpi-content">
+                                    <span class="ov-kpi-label">공급량 이상 징후</span>
+                                    <div class="ov-kpi-val"><span id="kpiSupplyTotalCount">0</span><small>건</small></div>
+                                    <div class="ov-kpi-tags">
+                                        <span class="ov-badge-danger" id="badgeTmErrorCount">TM결측 0</span>
+                                        <span class="ov-badge-warning" id="badgePressFreezeCount">수압고착 0</span>
+                                        <span class="ov-badge-accent" id="badgeMnfSurgeCount">MNF증가 0</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="ov-kpi-card ov-kpi-charge" data-filter-target="charge" title="부과량 특이 세부항목 보기">
+                                <div class="ov-kpi-icon"><i class="fa-solid fa-receipt"></i></div>
+                                <div class="ov-kpi-content">
+                                    <span class="ov-kpi-label">부과량 특이 수용가</span>
+                                    <div class="ov-kpi-val"><span id="kpiChargeTotalCount">0</span><small>건</small></div>
+                                    <div class="ov-kpi-tags">
+                                        <span class="ov-badge-danger" id="badgeChargeSurgeCount">급증 0</span>
+                                        <span class="ov-badge-warning" id="badgeChargeZeroCount">0톤/급감 0</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="ov-kpi-card ov-kpi-yield" data-filter-target="yield" title="유수율 급변 세부항목 보기">
+                                <div class="ov-kpi-icon"><i class="fa-solid fa-chart-line"></i></div>
+                                <div class="ov-kpi-content">
+                                    <span class="ov-kpi-label">유수율 급변 블록</span>
+                                    <div class="ov-kpi-val"><span id="kpiYieldTotalCount">0</span><small>건</small></div>
+                                    <div class="ov-kpi-tags">
+                                        <span class="ov-badge-danger" id="badgeYieldDropCount">급락 0</span>
+                                        <span class="ov-badge-success" id="badgeYieldRiseCount">급상승 0</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="ov-kpi-card ov-kpi-lowyield" data-filter-target="yield" title="저유수율 취약 블록 보기">
+                                <div class="ov-kpi-icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
+                                <div class="ov-kpi-content">
+                                    <span class="ov-kpi-label">저유수율 취약 블록 (<60%)</span>
+                                    <div class="ov-kpi-val"><span id="kpiLowYieldCount">0</span><small>개 블록</small></div>
+                                    <div class="ov-kpi-tags">
+                                        <span class="ov-badge-danger" id="badgeLowYieldTop">최저: -%</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 3. 3개 영역 그리드 컨테이너 -->
+                        <div class="overview-grid-container">
+                            <!-- 1. 공급량 특이사항 카드 -->
+                            <div class="overview-card" id="cardOverviewSupply">
+                                <div class="overview-card-header header-supply">
+                                    <div class="och-title">
+                                        <i class="fa-solid fa-faucet" style="color:#0284c7;"></i>
+                                        <h4>1. 공급량 이상 징후</h4>
+                                        <span class="och-badge" id="cardSupplyBadge">0건</span>
+                                    </div>
+                                    <span class="och-sub">TM 통신오류, 수압 고착, 최근 10일 야간최소 증가</span>
+                                </div>
+                                <div class="overview-card-body">
+                                    <!-- 소그룹 A: TM 통신오류 / 결측 -->
+                                    <div class="ov-subgroup">
+                                        <div class="ov-subgroup-title">
+                                            <span class="ov-indicator dot-red"></span>
+                                            <h5>TM 통신 오류 / 결측 블록 (유량 미수신)</h5>
+                                            <span class="ov-sub-count" id="countTmErrorList">0개소</span>
+                                        </div>
+                                        <p class="ov-subgroup-desc">해당 월 일별 유량 데이터가 결측(0톤 또는 미수신)된 블록</p>
+                                        <div class="ov-list-box" id="listSupplyTmErrors">
+                                            <!-- 동적 생성 -->
+                                        </div>
+                                    </div>
+
+                                    <!-- 소그룹 B: 수압 센서 고착 / 오류의심 -->
+                                    <div class="ov-subgroup">
+                                        <div class="ov-subgroup-title">
+                                            <span class="ov-indicator dot-orange"></span>
+                                            <h5>수압 변동 없음 (센서 고착 / 오류 의심)</h5>
+                                            <span class="ov-sub-count" id="countPressFreezeList">0개소</span>
+                                        </div>
+                                        <p class="ov-subgroup-desc">일교차(최대수압 - 최소수압)가 0.05kgf/cm² 이하로 변동 없는 블록</p>
+                                        <div class="ov-list-box" id="listSupplyPressureFreezes">
+                                            <!-- 동적 생성 -->
+                                        </div>
+                                    </div>
+
+                                    <!-- 소그룹 C: 최근 10일 야간최소 지속 증가 -->
+                                    <div class="ov-subgroup">
+                                        <div class="ov-subgroup-title">
+                                            <span class="ov-indicator dot-purple"></span>
+                                            <h5>최근 10일 야간최소유량(MNF) 지속 증가 (누수 의심)</h5>
+                                            <span class="ov-sub-count" id="countMnfSurgeList">0개소</span>
+                                        </div>
+                                        <p class="ov-subgroup-desc">최근 10일간 야간최소유량이 지속적으로 상승하여 관망 누수가 강력히 의심되는 블록</p>
+                                        <div class="ov-list-box" id="listSupplyMnfSurges">
+                                            <!-- 동적 생성 -->
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 2. 부과량 특이사항 카드 -->
+                            <div class="overview-card" id="cardOverviewCharge">
+                                <div class="overview-card-header header-charge">
+                                    <div class="och-title">
+                                        <i class="fa-solid fa-receipt" style="color:#10b981;"></i>
+                                        <h4>2. 부과량 특이사항</h4>
+                                        <span class="och-badge" id="cardChargeBadge">0건</span>
+                                    </div>
+                                    <span class="och-sub">최근 3개월 사용량 비교 (일사용량 급증 vs 전무/0톤)</span>
+                                </div>
+                                <div class="overview-card-body">
+                                    <!-- 소그룹 A: 일사용량 급증 수용가 -->
+                                    <div class="ov-subgroup">
+                                        <div class="ov-subgroup-title">
+                                            <span class="ov-indicator dot-red"></span>
+                                            <h5>일사용량 급증 수용가 (옥내 누수 / 이상 다량)</h5>
+                                            <span class="ov-sub-count" id="countChargeSurgeList">0개소</span>
+                                        </div>
+                                        <p class="ov-subgroup-desc">최근 3개월 대비 당월 사용량이 70% 이상 급증한 수용가</p>
+                                        <div class="ov-list-box" id="listChargeSurges">
+                                            <!-- 동적 생성 -->
+                                        </div>
+                                    </div>
+
+                                    <!-- 소그룹 B: 일사용량 전무(0톤) / 급감 수용가 -->
+                                    <div class="ov-subgroup">
+                                        <div class="ov-subgroup-title">
+                                            <span class="ov-indicator dot-orange"></span>
+                                            <h5>일사용량 전무(0톤) / 급감 수용가 (고장·폐전 의심)</h5>
+                                            <span class="ov-sub-count" id="countChargeZeroList">0개소</span>
+                                        </div>
+                                        <p class="ov-subgroup-desc">이전 정상 사용(15m³ 이상)에서 당월 0톤 또는 80% 이상 급감한 수용가</p>
+                                        <div class="ov-list-box" id="listChargeZeros">
+                                            <!-- 동적 생성 -->
+                                        </div>
+                                    </div>
+
+                                    <!-- 소그룹 C: 블록별 부과량 급변 현황 -->
+                                    <div class="ov-subgroup">
+                                        <div class="ov-subgroup-title">
+                                            <span class="ov-indicator dot-blue"></span>
+                                            <h5>블록별 월간 부과량 주요 변동 현황</h5>
+                                            <span class="ov-sub-count" id="countChargeBlockDiffList">상위 5개소</span>
+                                        </div>
+                                        <p class="ov-subgroup-desc">전월 대비 블록 총사용량 변동 폭이 가장 큰 블록</p>
+                                        <div class="ov-list-box" id="listChargeBlockDiffs">
+                                            <!-- 동적 생성 -->
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 3. 유수율 변동 특이사항 카드 -->
+                            <div class="overview-card" id="cardOverviewYield">
+                                <div class="overview-card-header header-yield">
+                                    <div class="och-title">
+                                        <i class="fa-solid fa-chart-line" style="color:#8b5cf6;"></i>
+                                        <h4>3. 유수율 변동 특이사항</h4>
+                                        <span class="och-badge" id="cardYieldBadge">0건</span>
+                                    </div>
+                                    <span class="och-sub">전월 대비 유수율 급락(누수의심) 및 급상승(정비효과)</span>
+                                </div>
+                                <div class="overview-card-body">
+                                    <!-- 소그룹 A: 전월 대비 유수율 급락 블록 -->
+                                    <div class="ov-subgroup">
+                                        <div class="ov-subgroup-title">
+                                            <span class="ov-indicator dot-red"></span>
+                                            <h5>전월 대비 유수율 급락 블록 (▼ 3.0%p 이상)</h5>
+                                            <span class="ov-sub-count" id="countYieldDropList">0개소</span>
+                                        </div>
+                                        <p class="ov-subgroup-desc">유수율이 전달에 비해 크게 하락하여 누수 탐사 및 점검이 시급한 블록</p>
+                                        <div class="ov-list-box" id="listYieldDrops">
+                                            <!-- 동적 생성 -->
+                                        </div>
+                                    </div>
+
+                                    <!-- 소그룹 B: 전월 대비 유수율 급상승 블록 -->
+                                    <div class="ov-subgroup">
+                                        <div class="ov-subgroup-title">
+                                            <span class="ov-indicator dot-green"></span>
+                                            <h5>전월 대비 유수율 급상승 블록 (▲ 3.0%p 이상)</h5>
+                                            <span class="ov-sub-count" id="countYieldRiseList">0개소</span>
+                                        </div>
+                                        <p class="ov-subgroup-desc">유수율이 전달에 비해 크게 상승하여 누수수리/정비 효과가 나타난 블록</p>
+                                        <div class="ov-list-box" id="listYieldRises">
+                                            <!-- 동적 생성 -->
+                                        </div>
+                                    </div>
+
+                                    <!-- 소그룹 C: 저유수율 집중관리 블록 -->
+                                    <div class="ov-subgroup">
+                                        <div class="ov-subgroup-title">
+                                            <span class="ov-indicator dot-purple"></span>
+                                            <h5>저유수율 취약 블록 (< 60% 집중 관리)</h5>
+                                            <span class="ov-sub-count" id="countYieldLowList">0개소</span>
+                                        </div>
+                                        <p class="ov-subgroup-desc">현재 유수율이 60% 미만으로 우선적인 관망 정비가 필요한 블록 Top 5</p>
+                                        <div class="ov-list-box" id="listYieldLows">
+                                            <!-- 동적 생성 -->
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
                 <!-- 공급량 분석 (2열 분할 UI: 좌측 일별 매트릭스 표 + 우측 상단 추천 결과값 + 우측 하단 유량·누수수리 차트) -->
-                <section id="sectionDashSupply" class="dash-section active">
+                <section id="sectionDashSupply" class="dash-section" style="display:none;">
                     <div class="supply-split-container">
                         <!-- 1. 좌측 영역 (빨간 테두리): 일별 블록별 결과 테이블 (드래그 스크롤 지원) -->
                         <div class="supply-left-zone">
@@ -427,7 +679,7 @@
                                                 <th style="width:125px;">수용가번호</th>
                                                 <th>수용가명</th>
                                                 <th style="width:65px; text-align:center;">구경</th>
-                                                <th style="width:235px; text-align:center;">월별 사용량 (m³)<div style="font-size:10px; font-weight:normal; color:#475569; margin-top:1px;">2026.05 | 2026.06 | 2026.07</div></th>
+                                                <th style="width:235px; text-align:center;">월별 사용량 (m³)<div style="font-size:10px; font-weight:normal; color:#475569; margin-top:1px;" id="chargeTableMonthHeader">2026.09 | 2026.10 | 2026.11</div></th>
                                                 <th style="width:195px; text-align:center;">진단 및 상태검토</th>
                                             </tr>
                                         </thead>
@@ -448,7 +700,7 @@
                                         <i class="fa-solid fa-sliders" style="color:#2563EB;"></i>
                                         <span>분석 항목 및 조건 선택</span>
                                     </div>
-                                    <span class="charge-data-version-badge" id="chargeDataVersionBadge">최근 3개월 (2026.05 ~ 07)</span>
+                                    <span class="charge-data-version-badge" id="chargeDataVersionBadge">최근 3개월 (2026.09 ~ 11)</span>
                                 </div>
 
                                 <div class="charge-filter-toolbar">
@@ -1008,9 +1260,13 @@
                                 <div class="glc-sub-header">
                                     <label class="glc-sub-label">
                                         <input type="checkbox" id="chkLabel_blocks" class="glc-sub-checkbox glc-label-chk" checked data-layer="blocks">
-                                        <span class="glc-sub-title" style="font-weight:600; color:#475569;">라벨 표시 (블록명)</span>
+                                        <span class="glc-sub-title" style="font-weight:600; color:#475569;">라벨 표시</span>
                                     </label>
                                 </div>
+                                <select class="glc-label-field-select" data-layer="blocks" title="블록 라벨 표시 필드 선택">
+                                    <option value="name" selected>블록명 (구산1 등)</option>
+                                    <option value="id">블록코드 (CHG-01 등)</option>
+                                </select>
                                 <div class="glc-size-row" style="margin-top:4px;">
                                     <span class="glc-size-tag">라벨 크기</span>
                                     <input type="range" class="glc-size-slider glc-label-slider" min="10" max="22" step="1" value="10" data-layer="blocks">
@@ -1034,21 +1290,19 @@
                             </button>
                         </div>
                         <div class="glc-sub-panel" id="glcSub_reservoirs" style="display:none;">
-                            <div class="glc-sub-item">
-                                <div class="glc-size-row">
-                                    <span class="glc-size-tag">크기</span>
-                                    <input type="range" class="glc-size-slider" min="16" max="38" step="1" value="24" data-group="facilities" data-subtype="reservoirs">
-                                    <span class="glc-size-num" id="lblSize_facilities_reservoirs">24px</span>
-                                </div>
-                            </div>
-                            <!-- 시설물명 라벨 설정 -->
-                            <div class="glc-sub-item glc-label-setting-item" style="margin-top:6px; padding-top:6px; border-top:1px dashed #CBD5E1;">
+                            <!-- 시설물명 라벨 설정 (포인트 크기 슬라이더 삭제 완료) -->
+                            <div class="glc-sub-item glc-label-setting-item">
                                 <div class="glc-sub-header">
                                     <label class="glc-sub-label">
                                         <input type="checkbox" id="chkLabel_reservoirs" class="glc-sub-checkbox glc-label-chk" data-layer="reservoirs">
-                                        <span class="glc-sub-title" style="font-weight:600; color:#475569;">라벨 표시 (시설물명)</span>
+                                        <span class="glc-sub-title" style="font-weight:600; color:#475569;">라벨 표시</span>
                                     </label>
                                 </div>
+                                <select class="glc-label-field-select" data-layer="reservoirs" title="배수지 라벨 표시 필드 선택">
+                                    <option value="name" selected>시설물명 (배수지명)</option>
+                                    <option value="capacity">시설용량 (m³)</option>
+                                    <option value="id">관리번호</option>
+                                </select>
                                 <div class="glc-size-row" style="margin-top:4px;">
                                     <span class="glc-size-tag">라벨 크기</span>
                                     <input type="range" class="glc-size-slider glc-label-slider" min="10" max="20" step="1" value="10" data-layer="reservoirs">
@@ -1072,21 +1326,19 @@
                             </button>
                         </div>
                         <div class="glc-sub-panel" id="glcSub_boosters" style="display:none;">
-                            <div class="glc-sub-item">
-                                <div class="glc-size-row">
-                                    <span class="glc-size-tag">크기</span>
-                                    <input type="range" class="glc-size-slider" min="14" max="36" step="1" value="22" data-group="facilities" data-subtype="boosters">
-                                    <span class="glc-size-num" id="lblSize_facilities_boosters">22px</span>
-                                </div>
-                            </div>
-                            <!-- 가압장 명칭 라벨 설정 -->
-                            <div class="glc-sub-item glc-label-setting-item" style="margin-top:6px; padding-top:6px; border-top:1px dashed #CBD5E1;">
+                            <!-- 가압장 명칭 라벨 설정 (포인트 크기 슬라이더 삭제 완료) -->
+                            <div class="glc-sub-item glc-label-setting-item">
                                 <div class="glc-sub-header">
                                     <label class="glc-sub-label">
                                         <input type="checkbox" id="chkLabel_boosters" class="glc-sub-checkbox glc-label-chk" data-layer="boosters">
-                                        <span class="glc-sub-title" style="font-weight:600; color:#475569;">라벨 표시 (명칭)</span>
+                                        <span class="glc-sub-title" style="font-weight:600; color:#475569;">라벨 표시</span>
                                     </label>
                                 </div>
+                                <select class="glc-label-field-select" data-layer="boosters" title="가압장 라벨 표시 필드 선택">
+                                    <option value="name" selected>시설물명 (가압장명)</option>
+                                    <option value="capacity">시설용량</option>
+                                    <option value="id">관리번호</option>
+                                </select>
                                 <div class="glc-size-row" style="margin-top:4px;">
                                     <span class="glc-size-tag">라벨 크기</span>
                                     <input type="range" class="glc-size-slider glc-label-slider" min="10" max="20" step="1" value="10" data-layer="boosters">
@@ -1110,21 +1362,18 @@
                             </button>
                         </div>
                         <div class="glc-sub-panel" id="glcSub_meters" style="display:none;">
-                            <div class="glc-sub-item">
-                                <div class="glc-size-row">
-                                    <span class="glc-size-tag">크기</span>
-                                    <input type="range" class="glc-size-slider" min="3" max="14" step="0.5" value="5.5" data-group="facilities" data-subtype="meters">
-                                    <span class="glc-size-num" id="lblSize_facilities_meters">5.5px</span>
-                                </div>
-                            </div>
-                            <!-- 유량계명 라벨 설정 -->
-                            <div class="glc-sub-item glc-label-setting-item" style="margin-top:6px; padding-top:6px; border-top:1px dashed #CBD5E1;">
+                            <!-- 유량계명 라벨 설정 (포인트 크기 슬라이더 삭제 완료) -->
+                            <div class="glc-sub-item glc-label-setting-item">
                                 <div class="glc-sub-header">
                                     <label class="glc-sub-label">
                                         <input type="checkbox" id="chkLabel_meters" class="glc-sub-checkbox glc-label-chk" data-layer="meters">
-                                        <span class="glc-sub-title" style="font-weight:600; color:#475569;">라벨 표시 (유량계명)</span>
+                                        <span class="glc-sub-title" style="font-weight:600; color:#475569;">라벨 표시</span>
                                     </label>
                                 </div>
+                                <select class="glc-label-field-select" data-layer="meters" title="유량계 라벨 표시 필드 선택">
+                                    <option value="name" selected>시설물명 (유량계명)</option>
+                                    <option value="id">관리번호</option>
+                                </select>
                                 <div class="glc-size-row" style="margin-top:4px;">
                                     <span class="glc-size-tag">라벨 크기</span>
                                     <input type="range" class="glc-size-slider glc-label-slider" min="9" max="18" step="1" value="9" data-layer="meters">
@@ -1148,15 +1397,22 @@
                             </button>
                         </div>
                         <div class="glc-sub-panel" id="glcSub_pipesLm" style="display:none;">
-                            <!-- D250 이하 (0~250mm): 파란색 실선 -->
+                            <!-- D250 이하 (0~250mm) -->
                             <div class="glc-sub-item">
                                 <div class="glc-sub-header">
                                     <label class="glc-sub-label">
                                         <input type="checkbox" class="glc-sub-checkbox" checked data-group="pipesLm" data-subtype="d250">
-                                        <span class="glc-sub-symbol" style="color:#2563EB; font-weight:bold; font-size:14px; letter-spacing:-2px;">━━</span>
-                                        <span class="glc-sub-title">D250 이하 (파란색)</span>
+                                        <span class="glc-sub-symbol glc-pipe-sym-d250" style="color:#2563EB; font-weight:bold; font-size:14px; letter-spacing:-2px;">━━</span>
+                                        <span class="glc-sub-title">D250 이하</span>
                                     </label>
-                                    <span class="glc-sub-badge" id="cntSub_pipesLm_d250">-</span>
+                                    <select class="glc-color-select" data-pipe-subtype="d250" title="D250 이하 관로 색상 선택">
+                                        <option value="#2563EB" selected>파랑</option>
+                                        <option value="#DC2626">빨강</option>
+                                        <option value="#C026D3">자홍</option>
+                                        <option value="#0D9488">청록</option>
+                                        <option value="#10B981">녹색</option>
+                                    </select>
+                                    <span class="glc-sub-badge" id="cntSub_pipesLm_d250" style="margin-left:4px;">-</span>
                                 </div>
                                 <div class="glc-size-row">
                                     <span class="glc-size-tag">선 굵기</span>
@@ -1165,15 +1421,22 @@
                                 </div>
                             </div>
 
-                            <!-- 250~500mm: 빨간색 실선 -->
+                            <!-- 250~500mm -->
                             <div class="glc-sub-item">
                                 <div class="glc-sub-header">
                                     <label class="glc-sub-label">
                                         <input type="checkbox" class="glc-sub-checkbox" checked data-group="pipesLm" data-subtype="d500">
-                                        <span class="glc-sub-symbol" style="color:#DC2626; font-weight:bold; font-size:14px; letter-spacing:-2px;">━━</span>
-                                        <span class="glc-sub-title">250~500 (빨간색)</span>
+                                        <span class="glc-sub-symbol glc-pipe-sym-d500" style="color:#DC2626; font-weight:bold; font-size:14px; letter-spacing:-2px;">━━</span>
+                                        <span class="glc-sub-title">250~500</span>
                                     </label>
-                                    <span class="glc-sub-badge" id="cntSub_pipesLm_d500">-</span>
+                                    <select class="glc-color-select" data-pipe-subtype="d500" title="250~500 관로 색상 선택">
+                                        <option value="#DC2626" selected>빨강</option>
+                                        <option value="#2563EB">파랑</option>
+                                        <option value="#C026D3">자홍</option>
+                                        <option value="#0D9488">청록</option>
+                                        <option value="#10B981">녹색</option>
+                                    </select>
+                                    <span class="glc-sub-badge" id="cntSub_pipesLm_d500" style="margin-left:4px;">-</span>
                                 </div>
                                 <div class="glc-size-row">
                                     <span class="glc-size-tag">선 굵기</span>
@@ -1182,15 +1445,22 @@
                                 </div>
                             </div>
 
-                            <!-- 500mm 초과: 빨간색 점선 -->
+                            <!-- 500mm 초과 -->
                             <div class="glc-sub-item">
                                 <div class="glc-sub-header">
                                     <label class="glc-sub-label">
                                         <input type="checkbox" class="glc-sub-checkbox" checked data-group="pipesLm" data-subtype="dover">
-                                        <span class="glc-sub-symbol" style="color:#DC2626; font-weight:bold; font-size:14px; letter-spacing:-1px;">┅┅</span>
-                                        <span class="glc-sub-title">500 초과 (빨간색 점선)</span>
+                                        <span class="glc-sub-symbol glc-pipe-sym-dover" style="color:#DC2626; font-weight:bold; font-size:14px; letter-spacing:-1px;">┅┅</span>
+                                        <span class="glc-sub-title">500 초과</span>
                                     </label>
-                                    <span class="glc-sub-badge" id="cntSub_pipesLm_dover">-</span>
+                                    <select class="glc-color-select" data-pipe-subtype="dover" title="500 초과 관로 색상 선택">
+                                        <option value="#DC2626" selected>빨강</option>
+                                        <option value="#2563EB">파랑</option>
+                                        <option value="#C026D3">자홍</option>
+                                        <option value="#0D9488">청록</option>
+                                        <option value="#10B981">녹색</option>
+                                    </select>
+                                    <span class="glc-sub-badge" id="cntSub_pipesLm_dover" style="margin-left:4px;">-</span>
                                 </div>
                                 <div class="glc-size-row">
                                     <span class="glc-size-tag">선 굵기</span>
@@ -1198,14 +1468,22 @@
                                     <span class="glc-size-num" id="lblSize_pipes_pipesLm_dover">2.0px</span>
                                 </div>
                             </div>
-                            <!-- 관라벨 설정 (D관경) -->
+
+                            <!-- 관로 라벨 설정 (pip_lbl 기본 설정) -->
                             <div class="glc-sub-item glc-label-setting-item" style="margin-top:8px; padding-top:6px; border-top:1px dashed #CBD5E1;">
                                 <div class="glc-sub-header">
                                     <label class="glc-sub-label">
                                         <input type="checkbox" id="chkLabel_pipesLm" class="glc-sub-checkbox glc-label-chk" data-layer="pipesLm">
-                                        <span class="glc-sub-title" style="font-weight:600; color:#475569;">라벨 표시 (관경 D)</span>
+                                        <span class="glc-sub-title" style="font-weight:600; color:#475569;">라벨 표시</span>
                                     </label>
                                 </div>
+                                <select class="glc-label-field-select" data-layer="pipesLm" title="상수관로(LM) 라벨 표시 필드 선택">
+                                    <option value="pip_lbl" selected>관로라벨 (pip_lbl - 년도/관종/관경/연장/심도)</option>
+                                    <option value="dia">관경 (D관경)</option>
+                                    <option value="mat">관종 (재질)</option>
+                                    <option value="len">연장 (m)</option>
+                                    <option value="id">관리번호 (LM-1)</option>
+                                </select>
                                 <div class="glc-size-row" style="margin-top:4px;">
                                     <span class="glc-size-tag">라벨 크기</span>
                                     <input type="range" class="glc-size-slider glc-label-slider" min="9" max="18" step="1" value="9" data-layer="pipesLm">
@@ -1230,10 +1508,44 @@
                         </div>
                         <div class="glc-sub-panel" id="glcSub_pipesLm2" style="display:none;">
                             <div class="glc-sub-item">
-                                <div class="glc-size-row">
+                                <div class="glc-sub-header">
+                                    <label class="glc-sub-label">
+                                        <span class="glc-sub-symbol glc-pipe-sym-pipesLm2" style="color:#2563EB; font-weight:bold; font-size:14px; letter-spacing:-2px;">━━</span>
+                                        <span class="glc-sub-title">관로 색상</span>
+                                    </label>
+                                    <select class="glc-color-select" data-pipe-subtype="pipesLm2" title="상수관로(LM2) 색상 선택">
+                                        <option value="#2563EB" selected>파랑</option>
+                                        <option value="#DC2626">빨강</option>
+                                        <option value="#C026D3">자홍</option>
+                                        <option value="#0D9488">청록</option>
+                                        <option value="#10B981">녹색</option>
+                                    </select>
+                                </div>
+                                <div class="glc-size-row" style="margin-top:4px;">
                                     <span class="glc-size-tag">선 굵기</span>
                                     <input type="range" class="glc-size-slider" min="1" max="8" step="0.2" value="1.0" data-group="pipes" data-subtype="pipesLm2">
                                     <span class="glc-size-num" id="lblSize_pipes_pipesLm2">1.0px</span>
+                                </div>
+                            </div>
+                            <!-- LM2 라벨 설정 -->
+                            <div class="glc-sub-item glc-label-setting-item" style="margin-top:6px; padding-top:6px; border-top:1px dashed #CBD5E1;">
+                                <div class="glc-sub-header">
+                                    <label class="glc-sub-label">
+                                        <input type="checkbox" id="chkLabel_pipesLm2" class="glc-sub-checkbox glc-label-chk" data-layer="pipesLm2">
+                                        <span class="glc-sub-title" style="font-weight:600; color:#475569;">라벨 표시</span>
+                                    </label>
+                                </div>
+                                <select class="glc-label-field-select" data-layer="pipesLm2" title="상수관로(LM2) 라벨 표시 필드 선택">
+                                    <option value="pip_lbl" selected>관로라벨 (pip_lbl - 년도/관종/관경/연장/심도)</option>
+                                    <option value="dia">관경 (D관경)</option>
+                                    <option value="mat">관종 (재질)</option>
+                                    <option value="len">연장 (m)</option>
+                                    <option value="id">관리번호 (LM2-1)</option>
+                                </select>
+                                <div class="glc-size-row" style="margin-top:4px;">
+                                    <span class="glc-size-tag">라벨 크기</span>
+                                    <input type="range" class="glc-size-slider glc-label-slider" min="9" max="18" step="1" value="9" data-layer="pipesLm2">
+                                    <span class="glc-size-num" id="lblLabelSize_pipesLm2">9px</span>
                                 </div>
                             </div>
                         </div>
@@ -1254,20 +1566,38 @@
                         </div>
                         <div class="glc-sub-panel" id="glcSub_servicePipes" style="display:none;">
                             <div class="glc-sub-item">
-                                <div class="glc-size-row">
+                                <div class="glc-sub-header">
+                                    <label class="glc-sub-label">
+                                        <span class="glc-sub-symbol glc-pipe-sym-servicePipes" style="color:#0D9488; font-weight:bold; font-size:14px; letter-spacing:-2px;">━━</span>
+                                        <span class="glc-sub-title">관로 색상</span>
+                                    </label>
+                                    <select class="glc-color-select" data-pipe-subtype="servicePipes" title="급수관로 색상 선택">
+                                        <option value="#0D9488" selected>청록</option>
+                                        <option value="#2563EB">파랑</option>
+                                        <option value="#DC2626">빨강</option>
+                                        <option value="#C026D3">자홍</option>
+                                        <option value="#10B981">녹색</option>
+                                    </select>
+                                </div>
+                                <div class="glc-size-row" style="margin-top:4px;">
                                     <span class="glc-size-tag">선 굵기</span>
                                     <input type="range" class="glc-size-slider" min="0.8" max="6" step="0.2" value="0.8" data-group="pipes" data-subtype="servicePipes">
                                     <span class="glc-size-num" id="lblSize_pipes_servicePipes">0.8px</span>
                                 </div>
                             </div>
-                            <!-- 관라벨 설정 (D관경) -->
+                            <!-- 관라벨 설정 -->
                             <div class="glc-sub-item glc-label-setting-item" style="margin-top:6px; padding-top:6px; border-top:1px dashed #CBD5E1;">
                                 <div class="glc-sub-header">
                                     <label class="glc-sub-label">
                                         <input type="checkbox" id="chkLabel_servicePipes" class="glc-sub-checkbox glc-label-chk" data-layer="servicePipes">
-                                        <span class="glc-sub-title" style="font-weight:600; color:#475569;">라벨 표시 (관경 D)</span>
+                                        <span class="glc-sub-title" style="font-weight:600; color:#475569;">라벨 표시</span>
                                     </label>
                                 </div>
+                                <select class="glc-label-field-select" data-layer="servicePipes" title="급수관로 라벨 표시 필드 선택">
+                                    <option value="dia" selected>관경 (D관경)</option>
+                                    <option value="len">연장 (m)</option>
+                                    <option value="id">관리번호</option>
+                                </select>
                                 <div class="glc-size-row" style="margin-top:4px;">
                                     <span class="glc-size-tag">라벨 크기</span>
                                     <input type="range" class="glc-size-slider glc-label-slider" min="8" max="16" step="1" value="8" data-layer="servicePipes">
@@ -1301,11 +1631,7 @@
                                     </label>
                                     <span class="glc-sub-badge">15,864</span>
                                 </div>
-                                <div class="glc-size-row">
-                                    <span class="glc-size-tag">크기</span>
-                                    <input type="range" class="glc-size-slider" min="2" max="14" step="0.5" value="5" data-group="valves" data-subtype="SA200">
-                                    <span class="glc-size-num" id="lblSize_valves_SA200">5.0px</span>
-                                </div>
+                                
                             </div>
 
                             <!-- SA910 제수변(원형) -->
@@ -1318,11 +1644,7 @@
                                     </label>
                                     <span class="glc-sub-badge">13,583</span>
                                 </div>
-                                <div class="glc-size-row">
-                                    <span class="glc-size-tag">크기</span>
-                                    <input type="range" class="glc-size-slider" min="2" max="14" step="0.5" value="5" data-group="valves" data-subtype="SA910">
-                                    <span class="glc-size-num" id="lblSize_valves_SA910">5.0px</span>
-                                </div>
+                                
                             </div>
 
                             <!-- SA119 소화전 -->
@@ -1335,11 +1657,7 @@
                                     </label>
                                     <span class="glc-sub-badge">1,706</span>
                                 </div>
-                                <div class="glc-size-row">
-                                    <span class="glc-size-tag">크기</span>
-                                    <input type="range" class="glc-size-slider" min="2" max="15" step="0.5" value="6" data-group="valves" data-subtype="SA119">
-                                    <span class="glc-size-num" id="lblSize_valves_SA119">6.0px</span>
-                                </div>
+                                
                             </div>
 
                             <!-- SA203 공기변 -->
@@ -1352,11 +1670,7 @@
                                     </label>
                                     <span class="glc-sub-badge">1,031</span>
                                 </div>
-                                <div class="glc-size-row">
-                                    <span class="glc-size-tag">크기</span>
-                                    <input type="range" class="glc-size-slider" min="2" max="14" step="0.5" value="5" data-group="valves" data-subtype="SA203">
-                                    <span class="glc-size-num" id="lblSize_valves_SA203">5.0px</span>
-                                </div>
+                                
                             </div>
 
                             <!-- SA202 역지변 -->
@@ -1369,11 +1683,7 @@
                                     </label>
                                     <span class="glc-sub-badge">773</span>
                                 </div>
-                                <div class="glc-size-row">
-                                    <span class="glc-size-tag">크기</span>
-                                    <input type="range" class="glc-size-slider" min="2" max="14" step="0.5" value="5" data-group="valves" data-subtype="SA202">
-                                    <span class="glc-size-num" id="lblSize_valves_SA202">5.0px</span>
-                                </div>
+                                
                             </div>
 
                             <!-- SA205 이토변 -->
@@ -1386,11 +1696,7 @@
                                     </label>
                                     <span class="glc-sub-badge">246</span>
                                 </div>
-                                <div class="glc-size-row">
-                                    <span class="glc-size-tag">크기</span>
-                                    <input type="range" class="glc-size-slider" min="2" max="14" step="0.5" value="5" data-group="valves" data-subtype="SA205">
-                                    <span class="glc-size-num" id="lblSize_valves_SA205">5.0px</span>
-                                </div>
+                                
                             </div>
 
                             <!-- SA204 감압변 -->
@@ -1403,11 +1709,7 @@
                                     </label>
                                     <span class="glc-sub-badge">146</span>
                                 </div>
-                                <div class="glc-size-row">
-                                    <span class="glc-size-tag">크기</span>
-                                    <input type="range" class="glc-size-slider" min="2" max="14" step="0.5" value="5" data-group="valves" data-subtype="SA204">
-                                    <span class="glc-size-num" id="lblSize_valves_SA204">5.0px</span>
-                                </div>
+                                
                             </div>
 
                             <!-- SA201 제수변(특수) -->
@@ -1420,11 +1722,7 @@
                                     </label>
                                     <span class="glc-sub-badge">7</span>
                                 </div>
-                                <div class="glc-size-row">
-                                    <span class="glc-size-tag">크기</span>
-                                    <input type="range" class="glc-size-slider" min="2" max="14" step="0.5" value="5" data-group="valves" data-subtype="SA201">
-                                    <span class="glc-size-num" id="lblSize_valves_SA201">5.0px</span>
-                                </div>
+                                
                             </div>
 
                             <!-- SA220 밸브기타 -->
@@ -1437,11 +1735,7 @@
                                     </label>
                                     <span class="glc-sub-badge">2</span>
                                 </div>
-                                <div class="glc-size-row">
-                                    <span class="glc-size-tag">크기</span>
-                                    <input type="range" class="glc-size-slider" min="2" max="14" step="0.5" value="5" data-group="valves" data-subtype="SA220">
-                                    <span class="glc-size-num" id="lblSize_valves_SA220">5.0px</span>
-                                </div>
+                                
                             </div>
 
                             <!-- 기타/미분류 -->
@@ -1454,11 +1748,7 @@
                                     </label>
                                     <span class="glc-sub-badge">3</span>
                                 </div>
-                                <div class="glc-size-row">
-                                    <span class="glc-size-tag">크기</span>
-                                    <input type="range" class="glc-size-slider" min="2" max="14" step="0.5" value="5" data-group="valves" data-subtype="OTHER">
-                                    <span class="glc-size-num" id="lblSize_valves_OTHER">5.0px</span>
-                                </div>
+                                
                             </div>
                         </div>
                     </div>
@@ -1487,11 +1777,7 @@
                                     </label>
                                     <span class="glc-sub-badge">53,068</span>
                                 </div>
-                                <div class="glc-size-row">
-                                    <span class="glc-size-tag">크기</span>
-                                    <input type="range" class="glc-size-slider" min="1.5" max="12" step="0.5" value="3.5" data-group="billing" data-subtype="normal">
-                                    <span class="glc-size-num" id="lblSize_billing_normal">3.5px</span>
-                                </div>
+                                
                             </div>
 
                             <!-- 다량 수용가 -->
@@ -1504,11 +1790,7 @@
                                     </label>
                                     <span class="glc-sub-badge">1,885</span>
                                 </div>
-                                <div class="glc-size-row">
-                                    <span class="glc-size-tag">크기</span>
-                                    <input type="range" class="glc-size-slider" min="2" max="15" step="0.5" value="5" data-group="billing" data-subtype="bulk">
-                                    <span class="glc-size-num" id="lblSize_billing_bulk">5.0px</span>
-                                </div>
+                                
                             </div>
 
                             <!-- 폐전 수용가 -->
@@ -1521,11 +1803,7 @@
                                     </label>
                                     <span class="glc-sub-badge">746</span>
                                 </div>
-                                <div class="glc-size-row">
-                                    <span class="glc-size-tag">크기</span>
-                                    <input type="range" class="glc-size-slider" min="1.5" max="10" step="0.5" value="3" data-group="billing" data-subtype="closed">
-                                    <span class="glc-size-num" id="lblSize_billing_closed">3.0px</span>
-                                </div>
+                                
                             </div>
                         </div>
                     </div>
@@ -1569,6 +1847,23 @@
                                 <span class="glc-slider-round"></span>
                             </label>
                         </div>
+                        <!-- 모바일 라벨 표시 항목 선택 -->
+                        <div class="glc-modal-row" id="glcModalFieldRow" style="margin-top:6px;">
+                            <span class="glc-modal-label">라벨 항목</span>
+                            <select id="selGlcModalLabelField" class="glc-label-field-select" style="max-width:160px; margin-top:0;">
+                            </select>
+                        </div>
+                        <!-- 모바일 관로 색상 선택 (관로 레이어 전용) -->
+                        <div class="glc-modal-row" id="glcModalColorRow" style="display:none; margin-top:6px;">
+                            <span class="glc-modal-label">관로 색상</span>
+                            <select id="selGlcModalColor" class="glc-color-select" style="margin-left:0; height:26px; width:auto;">
+                                <option value="#2563EB">파랑</option>
+                                <option value="#DC2626">빨강</option>
+                                <option value="#C026D3">자홍</option>
+                                <option value="#0D9488">청록</option>
+                                <option value="#10B981">녹색</option>
+                            </select>
+                        </div>
                         <div class="glc-modal-row glc-modal-slider-row">
                             <div style="display:flex; justify-content:space-between; align-items:center; width:100%; margin-bottom:6px;">
                                 <span class="glc-modal-label">라벨 크기</span>
@@ -1603,7 +1898,7 @@
                             <div class="vsm-kbd-badge" title="단축키 안내">
                                 <kbd>Ctrl</kbd>+<kbd>F</kbd>
                             </div>
-                            <button type="button" id="btnVsmClose" class="vsm-close-btn" title="닫기 (ESC)">
+                            <button type="button" id="btnVsmClose" class="vsm-close-btn" title="닫기 (ESC)" onclick="if(typeof window.closeAddressSearchModal === 'function') window.closeAddressSearchModal(event);">
                                 <i class="fa-solid fa-xmark"></i>
                             </button>
                         </div>
@@ -1632,7 +1927,7 @@
 
                 <div class="map-toolbar-group" id="mapToolbarGroup">
                     <!-- 1. 통합 검색 버튼 (Ctrl + F) -->
-                    <button type="button" id="btnMapSearchToggle" class="btn-map-ctrl-fab" title="통합 주소·GIS 검색 (단축키: Ctrl + F)">
+                    <button type="button" id="btnMapSearchToggle" class="btn-map-ctrl-fab" title="통합 주소·GIS 검색 (단축키: Ctrl + F)" onclick="if(typeof window.openAddressSearchModal === 'function') window.openAddressSearchModal();">
                         <i class="fa-solid fa-magnifying-glass"></i>
                     </button>
 
@@ -1766,7 +2061,7 @@
                         <i class="fa-solid fa-clipboard-list" style="color:var(--primary);"></i>
                         <span id="sidePanelMainTitle">관망 DB 및 현장 정보</span>
                     </div>
-                    <button id="btnClosePanel" class="btn-close-panel" title="패널 닫기">&times;</button>
+                    <button id="btnClosePanel" class="btn-close-panel" title="패널 닫기" onclick="if(typeof window.closeSidePanel === 'function') window.closeSidePanel(event);"><i class="fa-solid fa-xmark"></i></button>
                 </div>
 
                 <div class="panel-tabs">
@@ -1805,7 +2100,7 @@
                                     <button type="button" class="btn-rv-dock-action" id="btnRvDockOpenNewTab" title="새 탭으로 크게 보기">
                                         <i class="fa-solid fa-arrow-up-right-from-square"></i>
                                     </button>
-                                    <button type="button" class="btn-rv-dock-action btn-rv-dock-close" id="btnRvDockClose" title="로드뷰 닫기">
+                                    <button type="button" class="btn-rv-dock-action btn-rv-dock-close" id="btnRvDockClose" title="로드뷰 닫기" onclick="if(window.mapManager && typeof window.mapManager.closeDockedRoadview === 'function') window.mapManager.closeDockedRoadview(event);">
                                         <i class="fa-solid fa-xmark"></i>
                                     </button>
                                 </div>
@@ -2983,7 +3278,7 @@
 <script src="js/targetManager.js?v=20261113Q"></script>
 <!-- 9. 기준 및 근거 AI 어시스턴트 (노트북LM Grounded Engine) -->
 <script src="js/standardsLm.js?v=20261113Q"></script>
-<script src="js/app.js?v=20261119B"></script>
+<script src="js/app.js?v=20261120A"></script>
 
 <script>
     // 카카오톡 인앱 브라우저 감지 시 안내 및 크롬 전환

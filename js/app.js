@@ -17,7 +17,7 @@ window.onCloudDataRefreshed = function() {
     console.log("[App] 클라우드 최신 데이터가 반영되어 화면을 즉시 갱신합니다.");
     if (currentMainView === 'DASHBOARD') {
         const activeBtn = document.querySelector('.dash-tab-btn.active');
-        const activeTab = activeBtn ? activeBtn.dataset.tab : 'dash-supply';
+        const activeTab = activeBtn ? activeBtn.dataset.tab : 'dash-overview';
         switchDashboardTab(activeTab);
     }
     if (window.topologyManager) {
@@ -91,7 +91,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 /**
  * 메인 뷰 전환 함수 ('TOPOLOGY' | 'DASHBOARD' | 'MAP' | 'UNUSED_PIPE' | 'AGING_PIPE' | 'BLOCK_MAP' | 'SCHEDULE' | 'ADMIN_MODE')
  */
-function switchMainView(viewType, subTab = 'dash-supply') {
+function switchMainView(viewType, subTab = 'dash-overview') {
     currentMainView = viewType;
 
     const containers = {
@@ -243,7 +243,11 @@ function switchDashboardTab(tabId) {
 
     document.querySelectorAll('.dash-section').forEach(sec => sec.style.display = 'none');
 
-    if (tabId === 'dash-supply') {
+    if (tabId === 'dash-overview') {
+        const sec = document.getElementById('sectionDashOverview');
+        if (sec) sec.style.display = 'block';
+        renderDashboardOverview();
+    } else if (tabId === 'dash-supply') {
         document.getElementById('sectionDashSupply').style.display = 'block';
         renderDashboardSupply();
     } else if (tabId === 'dash-charge') {
@@ -260,6 +264,986 @@ function switchDashboardTab(tabId) {
             renderDashboardTarget('all');
         }
     }
+}
+
+// ==============================================================
+// 0. 대시보드 (매월 특이사항 종합 관제 알림판) 모듈
+// - 공급량: TM 결측(유량 미수신), 수압 변동 없음(센서 고착), 최근 10일 야간최소 증가(누수 의심)
+// - 부과량: 최근 3개월 비교 일사용량 급증 vs 전무/0톤/급감 수용가 및 블록별 변동
+// - 유수율: 전월 대비 유수율 급락 vs 급상승 블록 및 저유수율 취약 블록
+// ==============================================================
+let currentOverviewMonth = '2026-11';
+let currentOverviewFilter = 'all'; // 'all' | 'supply' | 'charge' | 'yield'
+let isOverviewInitialized = false;
+
+/**
+ * 0. 대시보드 메인 진입 및 렌더링 함수
+ */
+function renderDashboardOverview(monthKey = null) {
+    if (monthKey) {
+        currentOverviewMonth = monthKey;
+    }
+
+    // 1. 월 선택 셀렉터 동적 초기화
+    initOverviewMonthSelector();
+
+    // 2. 이벤트 리스너 바인딩 (최초 1회)
+    if (!isOverviewInitialized) {
+        setupOverviewEventListeners();
+        isOverviewInitialized = true;
+    }
+
+    // 3. 공급량 특이사항 연산 및 렌더링
+    const supplyData = computeSupplyAnomalies(currentOverviewMonth);
+    renderSupplyAnomalies(supplyData);
+
+    // 4. 부과량 특이사항 연산 및 렌더링
+    const chargeData = computeChargeAnomalies(currentOverviewMonth);
+    renderChargeAnomalies(chargeData);
+
+    // 5. 유수율 변동 특이사항 연산 및 렌더링
+    const yieldData = computeYieldAnomalies(currentOverviewMonth);
+    renderYieldAnomalies(yieldData);
+
+    // 6. 상단 요약 KPI 바 업데이트
+    updateOverviewSummaryKpi(supplyData, chargeData, yieldData);
+
+    // 7. 현재 활성화된 필터 적용
+    applyOverviewFilter(currentOverviewFilter);
+}
+
+/**
+ * 월 선택 셀렉터 옵션 초기화
+ */
+function initOverviewMonthSelector() {
+    const sel = document.getElementById('overviewMonthSelect');
+    if (!sel) return;
+
+    if (sel.options.length === 0) {
+        const monthOptions = [
+            { key: '2026-11', label: '2026년 11월 (최신)' },
+            { key: '2026-10', label: '2026년 10월' },
+            { key: '2026-09', label: '2026년 09월' },
+            { key: '2026-08', label: '2026년 08월' },
+            { key: '2026-07', label: '2026년 07월' },
+            { key: '2026-06', label: '2026년 06월' }
+        ];
+
+        let html = '';
+        monthOptions.forEach(opt => {
+            html += `<option value="${opt.key}" ${opt.key === currentOverviewMonth ? 'selected' : ''}>${opt.label}</option>`;
+        });
+        sel.innerHTML = html;
+    } else {
+        sel.value = currentOverviewMonth;
+    }
+}
+
+/**
+ * 이벤트 리스너 설정
+ */
+function setupOverviewEventListeners() {
+    // 월 선택 변경
+    const sel = document.getElementById('overviewMonthSelect');
+    if (sel) {
+        sel.addEventListener('change', (e) => {
+            currentOverviewMonth = e.target.value;
+            renderDashboardOverview(currentOverviewMonth);
+        });
+    }
+
+    // 카테고리 필터 버튼 (Pills)
+    document.querySelectorAll('.ov-pill-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.ov-pill-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            const filter = btn.dataset.filter || 'all';
+            currentOverviewFilter = filter;
+            applyOverviewFilter(filter);
+        });
+    });
+
+    // KPI 카드 클릭 시 해당 필터 토글
+    document.querySelectorAll('.ov-kpi-card').forEach(card => {
+        card.addEventListener('click', () => {
+            const targetFilter = card.dataset.filterTarget;
+            if (targetFilter) {
+                document.querySelectorAll('.ov-pill-btn').forEach(b => {
+                    b.classList.toggle('active', b.dataset.filter === targetFilter);
+                });
+                currentOverviewFilter = targetFilter;
+                applyOverviewFilter(targetFilter);
+            }
+        });
+    });
+
+    // 엑셀 저장 버튼
+    const btnExcel = document.getElementById('btnExportOverviewExcel');
+    if (btnExcel) {
+        btnExcel.addEventListener('click', exportOverviewExcel);
+    }
+}
+
+/**
+ * 필터 적용 함수 (전체 / 공급량 / 부과량 / 유수율)
+ */
+function applyOverviewFilter(filter) {
+    const cardSupply = document.getElementById('cardOverviewSupply');
+    const cardCharge = document.getElementById('cardOverviewCharge');
+    const cardYield = document.getElementById('cardOverviewYield');
+
+    if (!cardSupply || !cardCharge || !cardYield) return;
+
+    if (filter === 'supply') {
+        cardSupply.style.display = 'flex';
+        cardCharge.style.display = 'none';
+        cardYield.style.display = 'none';
+    } else if (filter === 'charge') {
+        cardSupply.style.display = 'none';
+        cardCharge.style.display = 'flex';
+        cardYield.style.display = 'none';
+    } else if (filter === 'yield') {
+        cardSupply.style.display = 'none';
+        cardCharge.style.display = 'none';
+        cardYield.style.display = 'flex';
+    } else {
+        // all
+        cardSupply.style.display = 'flex';
+        cardCharge.style.display = 'flex';
+        cardYield.style.display = 'flex';
+    }
+}
+
+/**
+ * 김해시 전체 블록 목록 통합 도출 유틸
+ */
+function getOverviewAllBlocks() {
+    const set = new Set();
+    if (typeof getAllYieldReportBlocks === 'function') {
+        getAllYieldReportBlocks().forEach(b => {
+            if (b && !['W', 'w', 'undefined', 'null', 'B1', 'B7', 'B8', '비어있음'].includes(b)) set.add(b);
+        });
+    }
+    if (window.VERIFIED_YIELD_DATA) {
+        Object.keys(window.VERIFIED_YIELD_DATA).forEach(b => {
+            if (b && !['W', 'w', 'undefined', 'null', 'B1', 'B7', 'B8', '비어있음'].includes(b)) set.add(b);
+        });
+    }
+    if (window.GlobalWaterData && window.GlobalWaterData.blocks) {
+        window.GlobalWaterData.blocks.forEach(b => {
+            if (b && !['W', 'w', 'undefined', 'null', 'B1', 'B7', 'B8', '비어있음'].includes(b)) set.add(b);
+        });
+    }
+    if (window.GlobalWaterData && window.GlobalWaterData.supplyData) {
+        Object.keys(window.GlobalWaterData.supplyData).slice(-30).forEach(d => {
+            Object.keys(window.GlobalWaterData.supplyData[d] || {}).forEach(b => {
+                if (b && !['W', 'w', 'undefined', 'null', 'B1', 'B7', 'B8', '비어있음'].includes(b)) set.add(b);
+            });
+        });
+    }
+    return Array.from(set).sort();
+}
+
+/**
+ * 1. 공급량 특이사항 연산 (TM 통신오류, 수압 센서 고착, 야간최소 지속증가)
+ */
+function computeSupplyAnomalies(monthKey) {
+    const tmErrors = [];
+    const pressureFreezes = [];
+    const mnfSurges = [];
+
+    if (!window.GlobalWaterData || !window.GlobalWaterData.supplyData) {
+        return { tmErrors, pressureFreezes, mnfSurges };
+    }
+
+    const allDates = Object.keys(window.GlobalWaterData.supplyData).sort();
+    let monthDates = allDates.filter(d => d.startsWith(monthKey));
+    if (monthDates.length === 0) {
+        monthDates = allDates.slice(-30);
+    }
+
+    const blockList = getOverviewAllBlocks();
+
+    blockList.forEach(bName => {
+        // --- A. TM 통신 오류 / 결측 검사 ---
+        let missingDays = 0;
+        let normalDays = 0;
+        let lastMissing = null;
+
+        monthDates.forEach(d => {
+            const rawFlow = window.GlobalWaterData.supplyData[d]?.[bName]?.totalSupply;
+            if (rawFlow === undefined || rawFlow === null || rawFlow === 0) {
+                missingDays++;
+                lastMissing = d;
+            } else {
+                normalDays++;
+            }
+        });
+
+        // 정상 데이터가 일부 있으면서 결측 일자가 1일 이상 있는 경우 (통신 이상 블록)
+        if (missingDays >= 1 && normalDays > 0) {
+            tmErrors.push({
+                blockName: bName,
+                missingDays,
+                normalDays,
+                totalDays: monthDates.length,
+                lastMissing: lastMissing || monthDates[monthDates.length - 1],
+                isCritical: missingDays >= 3 || (lastMissing === monthDates[monthDates.length - 1])
+            });
+        }
+
+        // --- B. 수압 변동 없음 (센서 고착 / 오류 의심) ---
+        let freezeDays = 0;
+        let samplePressure = null;
+        let measuredCount = 0;
+
+        monthDates.forEach(d => {
+            const entry = window.GlobalWaterData.supplyData[d]?.[bName];
+            if (entry) {
+                const minP = entry.minPress;
+                const maxP = entry.maxPress;
+                if (typeof minP === 'number' && typeof maxP === 'number' && maxP > 0) {
+                    measuredCount++;
+                    const delta = Math.abs(maxP - minP);
+                    if (delta <= 0.05) {
+                        freezeDays++;
+                        samplePressure = maxP;
+                    }
+                }
+            }
+        });
+
+        if (freezeDays >= 2) {
+            pressureFreezes.push({
+                blockName: bName,
+                freezeDays,
+                samplePressure: samplePressure ? samplePressure.toFixed(1) : '0.0',
+                measuredCount,
+                isCritical: freezeDays >= 5
+            });
+        }
+
+        // --- C. 최근 10일 야간최소유량(MNF) 지속 증가 (누수 의심) ---
+        if (monthDates.length >= 7) {
+            const recentDates = monthDates.slice(-10);
+            const mnfList = recentDates.map(d => {
+                const v = typeof getNetFlow === 'function' 
+                    ? getNetFlow(d, bName, 'nightMin') 
+                    : window.GlobalWaterData.supplyData[d]?.[bName]?.nightMin;
+                return (typeof v === 'number' && v > 0 && v < 10000) ? v : null;
+            }).filter(v => v !== null);
+
+            if (mnfList.length >= 5) {
+                const half = Math.floor(mnfList.length / 2);
+                const sSlice = mnfList.slice(0, half);
+                const eSlice = mnfList.slice(-half);
+                const sAvg = sSlice.reduce((a, b) => a + b, 0) / sSlice.length;
+                const eAvg = eSlice.reduce((a, b) => a + b, 0) / eSlice.length;
+                const delta = eAvg - sAvg;
+                const pct = sAvg > 0 ? (delta / sAvg) * 100 : 0;
+
+                // 10일간 1.2 m³/h 이상 & 10% 이상 증가
+                if (delta >= 1.2 && pct >= 10.0) {
+                    mnfSurges.push({
+                        blockName: bName,
+                        startAvg: Number(sAvg.toFixed(1)),
+                        endAvg: Number(eAvg.toFixed(1)),
+                        delta: Number(delta.toFixed(1)),
+                        pct: Number(pct.toFixed(1)),
+                        recentDays: recentDates.length,
+                        isCritical: delta >= 3.5 || pct >= 25.0
+                    });
+                }
+            }
+        }
+    });
+
+    tmErrors.sort((a, b) => b.missingDays - a.missingDays);
+    pressureFreezes.sort((a, b) => b.freezeDays - a.freezeDays);
+    mnfSurges.sort((a, b) => b.delta - a.delta);
+
+    return { tmErrors, pressureFreezes, mnfSurges };
+}
+
+/**
+ * 2. 부과량 특이사항 연산 (일사용량 급증 수용가, 0톤 전무/급감 수용가, 블록별 변동)
+ */
+function computeChargeAnomalies(monthKey) {
+    const surges = [];
+    const zeros = [];
+    const blockDiffs = [];
+
+    if (!window.CONSUMER_CHARGE_DATA || !window.CONSUMER_CHARGE_DATA.blocks) {
+        return { surges, zeros, blockDiffs, totalSurgeCount: 0, totalZeroCount: 0 };
+    }
+
+    const blocksData = window.CONSUMER_CHARGE_DATA.blocks;
+    const summaryData = window.CONSUMER_CHARGE_DATA.summary || {};
+
+    Object.keys(blocksData).forEach(bName => {
+        const cList = blocksData[bName] || [];
+        cList.forEach(c => {
+            const m1 = typeof c.m1 === 'number' ? c.m1 : 0;
+            const m2 = typeof c.m2 === 'number' ? c.m2 : 0;
+            const m3 = typeof c.m3 === 'number' ? c.m3 : (typeof c.m2611 === 'number' ? c.m2611 : 0);
+
+            const prevAvg = (m1 + m2) / 2;
+            const diff = m3 - prevAvg;
+            const daily = c.dailyUsage || (m3 > 0 ? Number((m3 / 30).toFixed(2)) : 0);
+
+            // A. 급증 수용가: 이전평균 대비 당월 +70% 이상 & 차이 15m³ 이상
+            if (m3 >= 20 && (prevAvg === 0 || (diff >= 15 && (diff / prevAvg) >= 0.70))) {
+                const ratio = prevAvg > 0 ? Math.round((diff / prevAvg) * 100) : 999;
+                surges.push({
+                    cNo: c.cNo,
+                    name: c.name || '미등록',
+                    blockName: c.block || bName,
+                    type: c.type || '일반용',
+                    caliber: c.caliber || 13,
+                    m1, m2, m3,
+                    prevAvg: Number(prevAvg.toFixed(1)),
+                    diff: Number(diff.toFixed(1)),
+                    ratio,
+                    daily,
+                    isCritical: ratio >= 150 || diff >= 50
+                });
+            }
+
+            // B. 0톤 전무 / 급감 수용가: 이전평균 15m³ 이상에서 0톤 또는 80% 이상 급감
+            if (prevAvg >= 15 && (m3 === 0 || (prevAvg - m3) / prevAvg >= 0.80)) {
+                const dropRatio = Math.round(((prevAvg - m3) / prevAvg) * 100);
+                zeros.push({
+                    cNo: c.cNo,
+                    name: c.name || '미등록',
+                    blockName: c.block || bName,
+                    type: c.type || '일반용',
+                    caliber: c.caliber || 13,
+                    m1, m2, m3,
+                    prevAvg: Number(prevAvg.toFixed(1)),
+                    dropRatio,
+                    isZero: m3 === 0,
+                    isCritical: m3 === 0 && prevAvg >= 25
+                });
+            }
+        });
+    });
+
+    Object.keys(summaryData).forEach(bName => {
+        const s = summaryData[bName];
+        if (s && s.totalDailyUsage > 0) {
+            blockDiffs.push({
+                blockName: bName,
+                totalDailyUsage: Number(s.totalDailyUsage.toFixed(1)),
+                totalCount: s.totalCount || 0,
+                largeCount: s.largeCount || 0,
+                largeRatio: s.largeRatio || 0,
+                unfitCount: s.unfitCount || 0
+            });
+        }
+    });
+
+    surges.sort((a, b) => b.diff - a.diff);
+    zeros.sort((a, b) => b.prevAvg - a.prevAvg);
+    blockDiffs.sort((a, b) => b.totalDailyUsage - a.totalDailyUsage);
+
+    return {
+        surges: surges.slice(0, 50),
+        zeros: zeros.slice(0, 50),
+        blockDiffs: blockDiffs.slice(0, 10),
+        totalSurgeCount: surges.length,
+        totalZeroCount: zeros.length
+    };
+}
+
+/**
+ * 3. 유수율 변동 특이사항 연산 (전월 대비 급락, 급상승, 저유수율 취약 블록)
+ */
+function computeYieldAnomalies(monthKey) {
+    const drops = [];
+    const rises = [];
+    const lowYields = [];
+
+    const blockList = (typeof getAllYieldReportBlocks === 'function') 
+        ? getAllYieldReportBlocks() 
+        : getOverviewAllBlocks();
+
+    let targetIdx = YIELD_REPORT_MONTHS.length - 1; // 기본 2026-09
+    if (monthKey) {
+        const fIdx = YIELD_REPORT_MONTHS.findIndex(m => m.key === monthKey);
+        if (fIdx >= 1) targetIdx = fIdx;
+    }
+
+    const prevIdx = targetIdx - 1;
+    const curLabel = YIELD_REPORT_MONTHS[targetIdx]?.label || '';
+    const prevLabel = YIELD_REPORT_MONTHS[prevIdx]?.label || '';
+
+    blockList.forEach(bName => {
+        if (!bName || ['W', 'w', '비어있음', 'null', 'undefined'].includes(bName)) return;
+
+        const series = getYieldBlockSeries(bName);
+        if (!series || !series.yield) return;
+
+        const curY = series.yield[targetIdx];
+        const prevY = series.yield[prevIdx];
+        const curSup = series.supply ? series.supply[targetIdx] : null;
+        const curBill = series.billed ? series.billed[targetIdx] : null;
+
+        if (typeof curY === 'number' && !isNaN(curY)) {
+            // 저유수율 블록 (< 60%)
+            if (curY < 60.0 && curSup !== null && curSup > 0) {
+                lowYields.push({
+                    blockName: bName,
+                    curY: Number(curY.toFixed(1)),
+                    curSup: Math.round(curSup),
+                    curBill: curBill ? Math.round(curBill) : 0,
+                    curLabel
+                });
+            }
+
+            if (typeof prevY === 'number' && !isNaN(prevY)) {
+                const diff = Number((curY - prevY).toFixed(1));
+
+                // A. 유수율 급락 블록 (diff <= -3.0%p)
+                if (diff <= -3.0) {
+                    drops.push({
+                        blockName: bName,
+                        curY: Number(curY.toFixed(1)),
+                        prevY: Number(prevY.toFixed(1)),
+                        diff,
+                        curSup: curSup ? Math.round(curSup) : 0,
+                        curBill: curBill ? Math.round(curBill) : 0,
+                        isCritical: diff <= -7.0
+                    });
+                }
+
+                // B. 유수율 급상승 블록 (diff >= +3.0%p)
+                if (diff >= 3.0) {
+                    rises.push({
+                        blockName: bName,
+                        curY: Number(curY.toFixed(1)),
+                        prevY: Number(prevY.toFixed(1)),
+                        diff,
+                        curSup: curSup ? Math.round(curSup) : 0,
+                        curBill: curBill ? Math.round(curBill) : 0,
+                        isCritical: diff >= 7.0
+                    });
+                }
+            }
+        }
+    });
+
+    drops.sort((a, b) => a.diff - b.diff);
+    rises.sort((a, b) => b.diff - a.diff);
+    lowYields.sort((a, b) => a.curY - b.curY);
+
+    return {
+        drops,
+        rises,
+        lowYields: lowYields.slice(0, 10),
+        curLabel,
+        prevLabel
+    };
+}
+
+/**
+ * 공급량 이상 리스트 HTML 렌더링
+ */
+function renderSupplyAnomalies(data) {
+    const { tmErrors, pressureFreezes, mnfSurges } = data;
+
+    // A. TM 통신 오류 / 결측
+    const elTm = document.getElementById('listSupplyTmErrors');
+    const badgeTm = document.getElementById('countTmErrorList');
+    if (badgeTm) badgeTm.textContent = `${tmErrors.length}개소`;
+
+    if (elTm) {
+        if (tmErrors.length === 0) {
+            elTm.innerHTML = `<div class="ov-empty-msg"><i class="fa-solid fa-circle-check" style="color:#10B981;"></i> 정상 수신 중 (결측 블록 없음)</div>`;
+        } else {
+            let html = '';
+            tmErrors.forEach(item => {
+                html += `
+                <div class="ov-item">
+                    <div class="ov-item-left">
+                        <div class="ov-item-title">
+                            <span class="ov-item-name" onclick="jumpToSupplyBlock('${item.blockName}')" title="공급량 분석 바로가기">${item.blockName}</span>
+                            <span class="${item.isCritical ? 'ov-badge-danger' : 'ov-badge-warning'}">${item.isCritical ? '위험 결측' : '주의'}</span>
+                        </div>
+                        <div class="ov-item-detail">
+                            <span><i class="fa-solid fa-triangle-exclamation" style="color:#EF4444;"></i> 결측 <b>${item.missingDays}일</b> (정상 ${item.normalDays}일)</span>
+                            <span>최근 결측: ${item.lastMissing}</span>
+                        </div>
+                    </div>
+                    <div class="ov-item-right">
+                        <button class="ov-action-btn" onclick="jumpToSupplyBlock('${item.blockName}')" title="공급량 분석 보기"><i class="fa-solid fa-chart-line"></i> 분석</button>
+                        <button class="ov-action-btn primary" onclick="jumpToGisMapBlock('${item.blockName}')" title="GIS 관망도 위치 보기"><i class="fa-solid fa-map-location-dot"></i> 지도</button>
+                    </div>
+                </div>`;
+            });
+            elTm.innerHTML = html;
+        }
+    }
+
+    // B. 수압 변동 없음
+    const elPress = document.getElementById('listSupplyPressureFreezes');
+    const badgePress = document.getElementById('countPressFreezeList');
+    if (badgePress) badgePress.textContent = `${pressureFreezes.length}개소`;
+
+    if (elPress) {
+        if (pressureFreezes.length === 0) {
+            elPress.innerHTML = `<div class="ov-empty-msg"><i class="fa-solid fa-circle-check" style="color:#10B981;"></i> 정상 변동 (수압 센서 고착 의심 없음)</div>`;
+        } else {
+            let html = '';
+            pressureFreezes.forEach(item => {
+                html += `
+                <div class="ov-item">
+                    <div class="ov-item-left">
+                        <div class="ov-item-title">
+                            <span class="ov-item-name" onclick="jumpToSupplyBlock('${item.blockName}')" title="공급량 분석 바로가기">${item.blockName}</span>
+                            <span class="${item.isCritical ? 'ov-badge-danger' : 'ov-badge-warning'}">${item.isCritical ? '센서점검요망' : '변동미약'}</span>
+                        </div>
+                        <div class="ov-item-detail">
+                            <span><i class="fa-solid fa-gauge" style="color:#F59E0B;"></i> 고착 <b>${item.freezeDays}일간</b> (일교차 0.00kgf/cm²)</span>
+                            <span>수압: ${item.samplePressure}kgf/cm²</span>
+                        </div>
+                    </div>
+                    <div class="ov-item-right">
+                        <button class="ov-action-btn" onclick="jumpToSupplyBlock('${item.blockName}')" title="공급량 분석 보기"><i class="fa-solid fa-chart-line"></i> 분석</button>
+                        <button class="ov-action-btn primary" onclick="jumpToGisMapBlock('${item.blockName}')" title="GIS 관망도 위치 보기"><i class="fa-solid fa-map-location-dot"></i> 지도</button>
+                    </div>
+                </div>`;
+            });
+            elPress.innerHTML = html;
+        }
+    }
+
+    // C. 최근 10일 야간최소 지속 증가
+    const elMnf = document.getElementById('listSupplyMnfSurges');
+    const badgeMnf = document.getElementById('countMnfSurgeList');
+    if (badgeMnf) badgeMnf.textContent = `${mnfSurges.length}개소`;
+
+    if (elMnf) {
+        if (mnfSurges.length === 0) {
+            elMnf.innerHTML = `<div class="ov-empty-msg"><i class="fa-solid fa-circle-check" style="color:#10B981;"></i> 안정 상태 (야간최소 급증 블록 없음)</div>`;
+        } else {
+            let html = '';
+            mnfSurges.forEach(item => {
+                html += `
+                <div class="ov-item">
+                    <div class="ov-item-left">
+                        <div class="ov-item-title">
+                            <span class="ov-item-name" onclick="jumpToSupplyBlock('${item.blockName}')" title="공급량 분석 바로가기">${item.blockName}</span>
+                            <span class="${item.isCritical ? 'ov-badge-danger' : 'ov-badge-accent'}">${item.isCritical ? '누수징후 심각' : '누수 의심'}</span>
+                        </div>
+                        <div class="ov-item-detail">
+                            <span><i class="fa-solid fa-arrow-trend-up" style="color:#8B5CF6;"></i> MNF: ${item.startAvg} ➔ <b>${item.endAvg} m³/h</b></span>
+                            <span style="color:#EF4444; font-weight:700;">▲ +${item.delta}m³/h (+${item.pct}%)</span>
+                        </div>
+                    </div>
+                    <div class="ov-item-right">
+                        <button class="ov-action-btn" onclick="jumpToSupplyBlock('${item.blockName}')" title="공급량 분석 보기"><i class="fa-solid fa-chart-line"></i> 분석</button>
+                        <button class="ov-action-btn primary" onclick="jumpToGisMapBlock('${item.blockName}')" title="GIS 관망도 위치 보기"><i class="fa-solid fa-map-location-dot"></i> 지도</button>
+                    </div>
+                </div>`;
+            });
+            elMnf.innerHTML = html;
+        }
+    }
+
+    const totalSupplyAnomalies = tmErrors.length + pressureFreezes.length + mnfSurges.length;
+    const cardBadge = document.getElementById('cardSupplyBadge');
+    if (cardBadge) cardBadge.textContent = `${totalSupplyAnomalies}건`;
+}
+
+/**
+ * 부과량 특이사항 리스트 HTML 렌더링
+ */
+function renderChargeAnomalies(data) {
+    const { surges, zeros, blockDiffs, totalSurgeCount, totalZeroCount } = data;
+
+    // A. 일사용량 급증 수용가
+    const elSurge = document.getElementById('listChargeSurges');
+    const badgeSurge = document.getElementById('countChargeSurgeList');
+    if (badgeSurge) badgeSurge.textContent = `${totalSurgeCount || surges.length}개소`;
+
+    if (elSurge) {
+        if (surges.length === 0) {
+            elSurge.innerHTML = `<div class="ov-empty-msg"><i class="fa-solid fa-circle-check" style="color:#10B981;"></i> 정상 범위 (사용량 폭증 수용가 없음)</div>`;
+        } else {
+            let html = '';
+            surges.slice(0, 30).forEach(c => {
+                html += `
+                <div class="ov-item">
+                    <div class="ov-item-left">
+                        <div class="ov-item-title">
+                            <span class="ov-item-name" onclick="jumpToChargeConsumer('${c.cNo}', '${c.blockName}')" title="수용가 상세 보기">${c.name}</span>
+                            <span class="ov-badge-danger">${c.isCritical ? '사용량 폭증' : '급증'}</span>
+                            <span style="font-size:10.5px; color:#64748B;">(${c.blockName} · ${c.type})</span>
+                        </div>
+                        <div class="ov-item-detail">
+                            <span>번호: ${c.cNo} (${c.caliber}mm)</span>
+                            <span>이전평균: ${c.prevAvg}m³ ➔ 당월: <b>${c.m3}m³</b></span>
+                            <span style="color:#EF4444; font-weight:700;">▲ +${c.diff}m³ (+${c.ratio}%)</span>
+                        </div>
+                    </div>
+                    <div class="ov-item-right">
+                        <button class="ov-action-btn primary" onclick="jumpToChargeConsumer('${c.cNo}', '${c.blockName}')" title="수용가 검침부과 상세 보기"><i class="fa-solid fa-magnifying-glass"></i> 검침조회</button>
+                    </div>
+                </div>`;
+            });
+            elSurge.innerHTML = html;
+        }
+    }
+
+    // B. 일사용량 전무(0톤) / 급감 수용가
+    const elZero = document.getElementById('listChargeZeros');
+    const badgeZero = document.getElementById('countChargeZeroList');
+    if (badgeZero) badgeZero.textContent = `${totalZeroCount || zeros.length}개소`;
+
+    if (elZero) {
+        if (zeros.length === 0) {
+            elZero.innerHTML = `<div class="ov-empty-msg"><i class="fa-solid fa-circle-check" style="color:#10B981;"></i> 정상 범위 (계량기 고장/폐전 의심 없음)</div>`;
+        } else {
+            let html = '';
+            zeros.slice(0, 30).forEach(c => {
+                html += `
+                <div class="ov-item">
+                    <div class="ov-item-left">
+                        <div class="ov-item-title">
+                            <span class="ov-item-name" onclick="jumpToChargeConsumer('${c.cNo}', '${c.blockName}')" title="수용가 상세 보기">${c.name}</span>
+                            <span class="${c.isZero ? 'ov-badge-danger' : 'ov-badge-warning'}">${c.isZero ? '0톤 전무 (고장의심)' : '사용량 급감'}</span>
+                            <span style="font-size:10.5px; color:#64748B;">(${c.blockName} · ${c.type})</span>
+                        </div>
+                        <div class="ov-item-detail">
+                            <span>번호: ${c.cNo} (${c.caliber}mm)</span>
+                            <span>이전사용: ${c.prevAvg}m³ ➔ 당월: <b>${c.m3}m³</b></span>
+                            <span style="color:#D97706; font-weight:700;">▼ -${c.dropRatio}%</span>
+                        </div>
+                    </div>
+                    <div class="ov-item-right">
+                        <button class="ov-action-btn primary" onclick="jumpToChargeConsumer('${c.cNo}', '${c.blockName}')" title="수용가 검침부과 상세 보기"><i class="fa-solid fa-magnifying-glass"></i> 검침조회</button>
+                    </div>
+                </div>`;
+            });
+            elZero.innerHTML = html;
+        }
+    }
+
+    // C. 블록별 부과량 주요 현황
+    const elBlock = document.getElementById('listChargeBlockDiffs');
+    if (elBlock) {
+        if (blockDiffs.length === 0) {
+            elBlock.innerHTML = `<div class="ov-empty-msg">부과량 데이터 수신 대기 중</div>`;
+        } else {
+            let html = '';
+            blockDiffs.slice(0, 8).forEach(b => {
+                html += `
+                <div class="ov-item">
+                    <div class="ov-item-left">
+                        <div class="ov-item-title">
+                            <span class="ov-item-name" onclick="jumpToChargeConsumer('', '${b.blockName}')">${b.blockName}</span>
+                            <span class="ov-badge-accent">일부과 ${b.totalDailyUsage}m³/일</span>
+                        </div>
+                        <div class="ov-item-detail">
+                            <span>전체 수용가: ${b.totalCount}전</span>
+                            <span>대량: ${b.largeCount}전 (${b.largeRatio}%)</span>
+                            <span>구경부적합: ${b.unfitCount}전</span>
+                        </div>
+                    </div>
+                    <div class="ov-item-right">
+                        <button class="ov-action-btn" onclick="jumpToChargeConsumer('', '${b.blockName}')"><i class="fa-solid fa-receipt"></i> 부과량</button>
+                        <button class="ov-action-btn primary" onclick="jumpToGisMapBlock('${b.blockName}')"><i class="fa-solid fa-map-location-dot"></i> 지도</button>
+                    </div>
+                </div>`;
+            });
+            elBlock.innerHTML = html;
+        }
+    }
+
+    const totalChargeAnomalies = (totalSurgeCount || surges.length) + (totalZeroCount || zeros.length);
+    const cardBadge = document.getElementById('cardChargeBadge');
+    if (cardBadge) cardBadge.textContent = `${totalChargeAnomalies}건`;
+}
+
+/**
+ * 유수율 변동 특이사항 리스트 HTML 렌더링
+ */
+function renderYieldAnomalies(data) {
+    const { drops, rises, lowYields, curLabel, prevLabel } = data;
+
+    // A. 유수율 급락 블록
+    const elDrop = document.getElementById('listYieldDrops');
+    const badgeDrop = document.getElementById('countYieldDropList');
+    if (badgeDrop) badgeDrop.textContent = `${drops.length}개소`;
+
+    if (elDrop) {
+        if (drops.length === 0) {
+            elDrop.innerHTML = `<div class="ov-empty-msg"><i class="fa-solid fa-circle-check" style="color:#10B981;"></i> 급락 블록 없음 (전월 대비 안정)</div>`;
+        } else {
+            let html = '';
+            drops.forEach(y => {
+                html += `
+                <div class="ov-item">
+                    <div class="ov-item-left">
+                        <div class="ov-item-title">
+                            <span class="ov-item-name" onclick="jumpToYieldBlock('${y.blockName}')" title="유수율 리포트 보기">${y.blockName}</span>
+                            <span class="${y.isCritical ? 'ov-badge-danger' : 'ov-badge-warning'}">${y.isCritical ? '급락 경고' : '하락'}</span>
+                        </div>
+                        <div class="ov-item-detail">
+                            <span>유수율: ${y.prevY}% ➔ <b>${y.curY}%</b></span>
+                            <span style="color:#EF4444; font-weight:700;">▼ ${y.diff}%p</span>
+                            <span>(공급 ${y.curSup.toLocaleString()}m³ · 부과 ${y.curBill.toLocaleString()}m³)</span>
+                        </div>
+                    </div>
+                    <div class="ov-item-right">
+                        <button class="ov-action-btn" onclick="jumpToYieldBlock('${y.blockName}')" title="유수율 리포트 보기"><i class="fa-solid fa-chart-line"></i> 리포트</button>
+                        <button class="ov-action-btn primary" onclick="jumpToGisMapBlock('${y.blockName}')" title="GIS 관망도 위치 보기"><i class="fa-solid fa-map-location-dot"></i> 지도</button>
+                    </div>
+                </div>`;
+            });
+            elDrop.innerHTML = html;
+        }
+    }
+
+    // B. 유수율 급상승 블록
+    const elRise = document.getElementById('listYieldRises');
+    const badgeRise = document.getElementById('countYieldRiseList');
+    if (badgeRise) badgeRise.textContent = `${rises.length}개소`;
+
+    if (elRise) {
+        if (rises.length === 0) {
+            elRise.innerHTML = `<div class="ov-empty-msg"><i class="fa-solid fa-info-circle" style="color:#64748B;"></i> 전월 대비 급상승 블록 없음</div>`;
+        } else {
+            let html = '';
+            rises.forEach(y => {
+                html += `
+                <div class="ov-item">
+                    <div class="ov-item-left">
+                        <div class="ov-item-title">
+                            <span class="ov-item-name" onclick="jumpToYieldBlock('${y.blockName}')" title="유수율 리포트 보기">${y.blockName}</span>
+                            <span class="ov-badge-success">${y.isCritical ? '대폭 개선' : '개선'}</span>
+                        </div>
+                        <div class="ov-item-detail">
+                            <span>유수율: ${y.prevY}% ➔ <b>${y.curY}%</b></span>
+                            <span style="color:#10B981; font-weight:700;">▲ +${y.diff}%p</span>
+                            <span>(공급 ${y.curSup.toLocaleString()}m³ · 부과 ${y.curBill.toLocaleString()}m³)</span>
+                        </div>
+                    </div>
+                    <div class="ov-item-right">
+                        <button class="ov-action-btn" onclick="jumpToYieldBlock('${y.blockName}')" title="유수율 리포트 보기"><i class="fa-solid fa-chart-line"></i> 리포트</button>
+                        <button class="ov-action-btn primary" onclick="jumpToGisMapBlock('${y.blockName}')" title="GIS 관망도 위치 보기"><i class="fa-solid fa-map-location-dot"></i> 지도</button>
+                    </div>
+                </div>`;
+            });
+            elRise.innerHTML = html;
+        }
+    }
+
+    // C. 저유수율 취약 블록 (< 60%)
+    const elLow = document.getElementById('listYieldLows');
+    const badgeLow = document.getElementById('countYieldLowList');
+    if (badgeLow) badgeLow.textContent = `${lowYields.length}개소`;
+
+    if (elLow) {
+        if (lowYields.length === 0) {
+            elLow.innerHTML = `<div class="ov-empty-msg"><i class="fa-solid fa-circle-check" style="color:#10B981;"></i> 60% 미만 취약 블록 없음</div>`;
+        } else {
+            let html = '';
+            lowYields.forEach(y => {
+                html += `
+                <div class="ov-item">
+                    <div class="ov-item-left">
+                        <div class="ov-item-title">
+                            <span class="ov-item-name" onclick="jumpToYieldBlock('${y.blockName}')" title="유수율 리포트 보기">${y.blockName}</span>
+                            <span class="ov-badge-danger">유수율 <b>${y.curY}%</b></span>
+                        </div>
+                        <div class="ov-item-detail">
+                            <span>공급량: ${y.curSup.toLocaleString()}m³</span>
+                            <span>부과량: ${y.curBill.toLocaleString()}m³</span>
+                            <span style="color:#EF4444;">(누수량 추정: ${Math.max(0, y.curSup - y.curBill).toLocaleString()}m³)</span>
+                        </div>
+                    </div>
+                    <div class="ov-item-right">
+                        <button class="ov-action-btn" onclick="jumpToYieldBlock('${y.blockName}')" title="유수율 리포트 보기"><i class="fa-solid fa-chart-line"></i> 리포트</button>
+                        <button class="ov-action-btn primary" onclick="jumpToGisMapBlock('${y.blockName}')" title="GIS 관망도 위치 보기"><i class="fa-solid fa-map-location-dot"></i> 지도</button>
+                    </div>
+                </div>`;
+            });
+            elLow.innerHTML = html;
+        }
+    }
+
+    const totalYieldAnomalies = drops.length + rises.length;
+    const cardBadge = document.getElementById('cardYieldBadge');
+    if (cardBadge) cardBadge.textContent = `${totalYieldAnomalies}건`;
+}
+
+/**
+ * 상단 요약 KPI 바 업데이트
+ */
+function updateOverviewSummaryKpi(supply, charge, yieldData) {
+    // 공급량 이상
+    const totalSup = supply.tmErrors.length + supply.pressureFreezes.length + supply.mnfSurges.length;
+    const kpiSupEl = document.getElementById('kpiSupplyTotalCount');
+    if (kpiSupEl) kpiSupEl.textContent = totalSup;
+
+    const bTm = document.getElementById('badgeTmErrorCount');
+    if (bTm) bTm.textContent = `TM결측 ${supply.tmErrors.length}`;
+
+    const bPress = document.getElementById('badgePressFreezeCount');
+    if (bPress) bPress.textContent = `수압고착 ${supply.pressureFreezes.length}`;
+
+    const bMnf = document.getElementById('badgeMnfSurgeCount');
+    if (bMnf) bMnf.textContent = `MNF증가 ${supply.mnfSurges.length}`;
+
+    // 부과량 특이
+    const totalChg = (charge.totalSurgeCount || charge.surges.length) + (charge.totalZeroCount || charge.zeros.length);
+    const kpiChgEl = document.getElementById('kpiChargeTotalCount');
+    if (kpiChgEl) kpiChgEl.textContent = totalChg;
+
+    const bSurge = document.getElementById('badgeChargeSurgeCount');
+    if (bSurge) bSurge.textContent = `급증 ${charge.totalSurgeCount || charge.surges.length}`;
+
+    const bZero = document.getElementById('badgeChargeZeroCount');
+    if (bZero) bZero.textContent = `0톤/급감 ${charge.totalZeroCount || charge.zeros.length}`;
+
+    // 유수율 급변
+    const totalYld = yieldData.drops.length + yieldData.rises.length;
+    const kpiYldEl = document.getElementById('kpiYieldTotalCount');
+    if (kpiYldEl) kpiYldEl.textContent = totalYld;
+
+    const bDrop = document.getElementById('badgeYieldDropCount');
+    if (bDrop) bDrop.textContent = `급락 ${yieldData.drops.length}`;
+
+    const bRise = document.getElementById('badgeYieldRiseCount');
+    if (bRise) bRise.textContent = `급상승 ${yieldData.rises.length}`;
+
+    // 저유수율 취약 블록
+    const kpiLowEl = document.getElementById('kpiLowYieldCount');
+    if (kpiLowEl) kpiLowEl.textContent = yieldData.lowYields.length;
+
+    const bLowTop = document.getElementById('badgeLowYieldTop');
+    if (bLowTop) {
+        if (yieldData.lowYields.length > 0) {
+            bLowTop.textContent = `최저: ${yieldData.lowYields[0].blockName} (${yieldData.lowYields[0].curY}%)`;
+        } else {
+            bLowTop.textContent = '최저: 정상';
+        }
+    }
+}
+
+/**
+ * 인터랙티브 점프 핸들러
+ */
+function jumpToSupplyBlock(blockName) {
+    if (!blockName) return;
+    switchDashboardTab('dash-supply');
+    setTimeout(() => {
+        if (typeof selectSupplyBlock === 'function') {
+            selectSupplyBlock(blockName);
+        }
+    }, 100);
+}
+
+function jumpToChargeConsumer(cNo, blockName) {
+    switchDashboardTab('dash-charge');
+    setTimeout(() => {
+        if (blockName) {
+            currentChargeBlock = blockName;
+            const sel = document.getElementById('chargeBlockSelect');
+            if (sel) sel.value = blockName;
+        }
+        if (cNo) {
+            const input = document.getElementById('chargeSearchInput');
+            if (input) input.value = cNo;
+        }
+        renderDashboardCharge();
+    }, 100);
+}
+
+function jumpToYieldBlock(blockName) {
+    if (!blockName) return;
+    switchDashboardTab('dash-yield');
+    setTimeout(() => {
+        currentYieldSelectedBlock = blockName;
+        renderDashboardYield();
+    }, 100);
+}
+
+function jumpToGisMapBlock(blockName) {
+    if (!blockName) return;
+    switchMainView('MAP');
+    setTimeout(() => {
+        if (mapManager && typeof mapManager.filterByBlock === 'function') {
+            mapManager.filterByBlock(blockName);
+        }
+        const topBlockSel = document.getElementById('blockSelect');
+        if (topBlockSel) topBlockSel.value = blockName;
+    }, 200);
+}
+
+/**
+ * 특이사항 엑셀 내보내기 (SheetJS 다중 시트)
+ */
+function exportOverviewExcel() {
+    if (typeof XLSX === 'undefined') {
+        alert("XLSX 엑셀 라이브러리가 로드되지 않았습니다.");
+        return;
+    }
+
+    const curMonth = currentOverviewMonth || '2026-11';
+    const wb = XLSX.utils.book_new();
+
+    const supply = computeSupplyAnomalies(curMonth);
+    const charge = computeChargeAnomalies(curMonth);
+    const yieldData = computeYieldAnomalies(curMonth);
+
+    // 시트 1: 공급량 이상 징후
+    const supplyRows = [
+        ["구분", "블록명", "이상유형", "상세내역", "위험도", "기준일자/값"]
+    ];
+    supply.tmErrors.forEach(item => {
+        supplyRows.push(["TM통신오류", item.blockName, "유량 미수신(결측)", `${item.missingDays}일 결측 (정상 ${item.normalDays}일)`, item.isCritical ? "위험" : "주의", item.lastMissing]);
+    });
+    supply.pressureFreezes.forEach(item => {
+        supplyRows.push(["수압센서고착", item.blockName, "수압 변동 없음", `${item.freezeDays}일간 변동 0.05 이하`, item.isCritical ? "위험" : "주의", `${item.samplePressure} kgf/cm²`]);
+    });
+    supply.mnfSurges.forEach(item => {
+        supplyRows.push(["야간최소증가", item.blockName, "MNF 지속 상승(누수의심)", `+${item.delta} m³/h (+${item.pct}%)`, item.isCritical ? "위험" : "주의", `초반 ${item.startAvg} ➔ 최근 ${item.endAvg}`]);
+    });
+    const wsSupply = XLSX.utils.aoa_to_sheet(supplyRows);
+    XLSX.utils.book_append_sheet(wb, wsSupply, "1_공급량이상");
+
+    // 시트 2: 부과량 특이 수용가
+    const chargeRows = [
+        ["구분", "수용가번호", "상호/성명", "블록명", "업종", "구경(mm)", "26.09", "26.10", "26.11", "이전평균", "증감량(m³)", "증감율(%)", "일사용량(m³/일)", "판정"]
+    ];
+    charge.surges.forEach(c => {
+        chargeRows.push(["급증수용가", c.cNo, c.name, c.blockName, c.type, c.caliber, c.m1, c.m2, c.m3, c.prevAvg, `+${c.diff}`, `+${c.ratio}%`, c.daily, c.isCritical ? "폭증(누수의심)" : "급증"]);
+    });
+    charge.zeros.forEach(c => {
+        chargeRows.push(["0톤/급감", c.cNo, c.name, c.blockName, c.type, c.caliber, c.m1, c.m2, c.m3, c.prevAvg, `-${(c.prevAvg - c.m3).toFixed(1)}`, `-${c.dropRatio}%`, 0, c.isCritical ? "고장/폐전의심(0톤)" : "급감"]);
+    });
+    const wsCharge = XLSX.utils.aoa_to_sheet(chargeRows);
+    XLSX.utils.book_append_sheet(wb, wsCharge, "2_부과량특이");
+
+    // 시트 3: 유수율 변동 블록
+    const yieldRows = [
+        ["구분", "블록명", "전월유수율(%)", "당월유수율(%)", "변동폭(%p)", "당월공급량(m³)", "당월부과량(m³)", "상태"]
+    ];
+    yieldData.drops.forEach(y => {
+        yieldRows.push(["유수율급락", y.blockName, `${y.prevY}%`, `${y.curY}%`, `${y.diff}%p`, y.curSup, y.curBill, y.isCritical ? "급락경고" : "주의"]);
+    });
+    yieldData.rises.forEach(y => {
+        yieldRows.push(["유수율급상승", y.blockName, `${y.prevY}%`, `${y.curY}%`, `+${y.diff}%p`, y.curSup, y.curBill, y.isCritical ? "대폭개선" : "개선"]);
+    });
+    yieldData.lowYields.forEach(y => {
+        yieldRows.push(["저유수율(<60%)", y.blockName, "-", `${y.curY}%`, "-", y.curSup, y.curBill, "집중관리대상"]);
+    });
+    const wsYield = XLSX.utils.aoa_to_sheet(yieldRows);
+    XLSX.utils.book_append_sheet(wb, wsYield, "3_유수율급변");
+
+    XLSX.writeFile(wb, `김해시_유수율분석_특이사항종합대시보드_${curMonth}.xlsx`);
 }
 
 // ==============================================================
@@ -576,23 +1560,79 @@ function renderDashboardSupply() {
     if (activeDates.length === 0) activeDates = allDates.slice(-30);
     currentActiveSupplyDates = activeDates;
 
-    // 블록 리스트 도출
-    let blocks = [];
-    if (window.GlobalWaterData && window.GlobalWaterData.blocks && window.GlobalWaterData.blocks.length > 0) {
-        blocks = [...window.GlobalWaterData.blocks];
-    } else if (window.GlobalWaterData && window.GlobalWaterData.supplyData) {
-        const set = new Set();
-        activeDates.forEach(d => {
-            Object.keys(window.GlobalWaterData.supplyData[d] || {}).forEach(b => set.add(b));
+    // 블록 리스트 도출 (김해시 131개 전체 소블록/중블록/배수지 완전 통합 추출)
+    const blockSet = new Set();
+
+    // 1. 김해시 전체 표준/검증 블록 목록 (131개 소블록/중블록/배수지)
+    if (typeof getAllYieldReportBlocks === 'function') {
+        getAllYieldReportBlocks().forEach(b => {
+            if (b && !['W', 'w', 'undefined', 'null', 'B1', 'B7', 'B8', '비어있음'].includes(b)) {
+                blockSet.add(b);
+            }
         });
-        blocks = Array.from(set);
     }
 
-    if (blocks.length === 0) {
-        blocks = ['구산1', '구산2', '구산3', '구산4', '금음마을', '내덕지구', '내외1', '내외2', '내외3', '내외4', '내외5', '대동', '북부1', '북부2', '삼계1', '삼계2', '삼안1', '활천1', '활천2'];
+    // 2. 검증 데이터셋(VERIFIED_YIELD_DATA)의 모든 블록
+    if (window.VERIFIED_YIELD_DATA) {
+        Object.keys(window.VERIFIED_YIELD_DATA).forEach(b => {
+            if (b && !['W', 'w', 'undefined', 'null', 'B1', 'B7', 'B8', '비어있음'].includes(b)) {
+                blockSet.add(b);
+            }
+        });
     }
 
-    blocks = blocks.filter(b => b && !['W', 'w', 'undefined', 'null', '비어있음'].includes(b))
+    // 3. 클라우드 전역 객체 블록 목록
+    if (window.GlobalWaterData && Array.isArray(window.GlobalWaterData.blocks)) {
+        window.GlobalWaterData.blocks.forEach(b => {
+            if (b && !['W', 'w', 'undefined', 'null', 'B1', 'B7', 'B8', '비어있음'].includes(b)) {
+                blockSet.add(b);
+            }
+        });
+    }
+
+    // 4. 공급량 데이터의 전체 날짜에서 측정된 모든 블록 (활성 기간뿐 아니라 전체 601일 날짜)
+    if (window.GlobalWaterData && window.GlobalWaterData.supplyData) {
+        Object.keys(window.GlobalWaterData.supplyData).forEach(d => {
+            Object.keys(window.GlobalWaterData.supplyData[d] || {}).forEach(b => {
+                if (b && !['W', 'w', 'undefined', 'null', 'B1', 'B7', 'B8', '비어있음'].includes(b)) {
+                    blockSet.add(b);
+                }
+            });
+        });
+    }
+
+    // 5. 부과량 수용가 데이터셋의 블록 목록
+    if (window.CONSUMER_CHARGE_DATA && window.CONSUMER_CHARGE_DATA.blocks) {
+        Object.keys(window.CONSUMER_CHARGE_DATA.blocks).forEach(b => {
+            if (b && !['W', 'w', 'undefined', 'null', 'B1', 'B7', 'B8', '비어있음'].includes(b)) {
+                blockSet.add(b);
+            }
+        });
+    }
+
+    // 6. 기본 필수 소블록 보장
+    const defaultEssentialBlocks = [
+        '감노', '구산1', '구산2', '구산3', '구산4',
+        '금음마을', '내덕지구', '내외1', '내외2', '내외3', '내외4', '내외5', '내외6', '내외7', '내외8',
+        '대감1', '대감2', '대동1', '대동2', '대동3', '대동4', '대동5', '대동6', '대동배수지', '대동산단1', '대동산단2', '대동산단3', '대동산단4', '대동첨단',
+        '덕산정수장(대동라인)', '덕산정수장(상동라인)', '동명', '동상1', '동상2', '동지역직결',
+        '명동정수장(메인)', '명동정수장(장유라인)', '명동정수장(진영라인)', '명동산단', '망천직결',
+        '병동농공', '부봉지구', '부원6', '부원7-1', '부원7-2', '부원7-3', '부원8',
+        '북부1', '북부2', '북부3', '북부4', '북부5', '북부6',
+        '불암1', '불암2', '불암3', '불암4', '불암5', '불암6',
+        '삼계1', '삼계2', '삼계정수장(동지역직결)', '삼안1', '삼안2', '삼안3', '삼안4', '삼안5', '삼안6', '삼어지구',
+        '상동1', '상동1배수지', '상동2', '상동2배수지', '상동3', '서김해산단',
+        '생림1', '생림2', '생림3', '생림배수지', '신천산단배수지', '안동', '어방배수지', '어방지구', '예안', '율하2', '율하배수지',
+        '장방', '장유1', '장유2', '장유3', '장유4', '장유5', '장유6', '장유7', '장유8', '장유9', '장유고지배수지',
+        '주동', '주촌1', '주촌2', '주촌3', '주촌4', '주촌5', '주촌6', '주촌7', '주촌직결2',
+        '진례직결', '진영1', '진영2', '진영3', '진영3-7', '진영4', '진영5', '진영6', '진영7', '진영구', '진영배수지',
+        '칠산서부1', '칠산서부2', '칠산서부3',
+        '한림직결1', '한림직결2', '한림직결3', '한림직결4', '한림직결5',
+        '활천1', '활천2', '활천3', '활천4', '활천5'
+    ];
+    defaultEssentialBlocks.forEach(b => blockSet.add(b));
+
+    let blocks = Array.from(blockSet).filter(b => b && !['W', 'w', 'undefined', 'null', 'B1', 'B7', 'B8', '비어있음'].includes(b))
                   .sort((a, b) => a.localeCompare(b, 'ko', { numeric: true }));
 
     // 검색창 키워드 필터
@@ -1226,19 +2266,19 @@ let isChargeEventsBound = false;
 
 /**
  * 0톤 수용가 연속 개월수 판정 함수
- * m2607: 최근 1개월, m2606: 2개월, m2605: 3개월
+ * m3: 최근 1개월, m2: 2개월, m1: 3개월
  */
 function getZeroMonthsInfo(c) {
-    const m7 = Number(c.m2607 !== undefined ? c.m2607 : (c.m7 || 0));
-    const m6 = Number(c.m2606 !== undefined ? c.m2606 : (c.m6 || 0));
-    const m5 = Number(c.m2605 !== undefined ? c.m2605 : (c.m5 || 0));
+    const mLatest = Number(c.m3 !== undefined ? c.m3 : (c.m2611 !== undefined ? c.m2611 : (c.m2607 !== undefined ? c.m2607 : (c.m7 || 0))));
+    const mMid = Number(c.m2 !== undefined ? c.m2 : (c.m2610 !== undefined ? c.m2610 : (c.m2606 !== undefined ? c.m2606 : (c.m6 || 0))));
+    const mOld = Number(c.m1 !== undefined ? c.m1 : (c.m2609 !== undefined ? c.m2609 : (c.m2605 !== undefined ? c.m2605 : (c.m5 || 0))));
 
     let count = 0;
-    if (m7 <= 0) {
+    if (mLatest <= 0) {
         count = 1;
-        if (m6 <= 0) {
+        if (mMid <= 0) {
             count = 2;
-            if (m5 <= 0) {
+            if (mOld <= 0) {
                 count = 3;
             }
         }
@@ -1246,25 +2286,25 @@ function getZeroMonthsInfo(c) {
 
     return {
         count: count,
-        isZero1M: m7 <= 0,
-        isZero2M: (m7 <= 0 && m6 <= 0),
-        isZero3M: (m7 <= 0 && m6 <= 0 && m5 <= 0),
+        isZero1M: mLatest <= 0,
+        isZero2M: (mLatest <= 0 && mMid <= 0),
+        isZero3M: (mLatest <= 0 && mMid <= 0 && mOld <= 0),
         // 데이터가 3개월분이므로 3개월 연속 0톤이면 6개월 연속 필터에도 장기 0톤으로 매칭
-        isZero6M: (m7 <= 0 && m6 <= 0 && m5 <= 0)
+        isZero6M: (mLatest <= 0 && mMid <= 0 && mOld <= 0)
     };
 }
 
 /**
  * 이상수용가(급증/급감) 판정 함수
- * 직전 2개월(5월, 6월) 평균 대비 최근월(7월) 사용량 비교
+ * 직전 2개월 평균 대비 최근월 사용량 비교
  */
 function getAbnormalUsageInfo(c) {
-    const m7 = Number(c.m2607 !== undefined ? c.m2607 : (c.m7 || 0));
-    const m6 = Number(c.m2606 !== undefined ? c.m2606 : (c.m6 || 0));
-    const m5 = Number(c.m2605 !== undefined ? c.m2605 : (c.m5 || 0));
+    const mLatest = Number(c.m3 !== undefined ? c.m3 : (c.m2611 !== undefined ? c.m2611 : (c.m2607 !== undefined ? c.m2607 : (c.m7 || 0))));
+    const mMid = Number(c.m2 !== undefined ? c.m2 : (c.m2610 !== undefined ? c.m2610 : (c.m2606 !== undefined ? c.m2606 : (c.m6 || 0))));
+    const mOld = Number(c.m1 !== undefined ? c.m1 : (c.m2609 !== undefined ? c.m2609 : (c.m2605 !== undefined ? c.m2605 : (c.m5 || 0))));
 
-    const avgPrev = (m5 + m6) / 2;
-    const diff = m7 - avgPrev;
+    const avgPrev = (mOld + mMid) / 2;
+    const diff = mLatest - avgPrev;
 
     // 1. 급증 수용가 (Surge): 직전 평균 대비 +80% 이상 급증 & 월 10톤 이상 차이
     if (avgPrev > 0 && diff >= 10 && (diff / avgPrev) >= 0.8) {
@@ -1274,17 +2314,17 @@ function getAbnormalUsageInfo(c) {
             ratio: ratio,
             diff: Math.round(diff * 10) / 10,
             avgPrev: Math.round(avgPrev * 10) / 10,
-            latest: m7,
+            latest: mLatest,
             desc: `급증 +${ratio}% (누수의심/용도변경)`
         };
-    } else if (avgPrev === 0 && m7 >= 20) {
+    } else if (avgPrev === 0 && mLatest >= 20) {
         return {
             type: 'SURGE',
             ratio: 999,
-            diff: m7,
+            diff: mLatest,
             avgPrev: 0,
-            latest: m7,
-            desc: `신규급증 +${m7}m³ (신규입주/누수)`
+            latest: mLatest,
+            desc: `신규급증 +${mLatest}m³ (신규입주/누수)`
         };
     }
 
@@ -1296,7 +2336,7 @@ function getAbnormalUsageInfo(c) {
             ratio: ratio,
             diff: Math.round(diff * 10) / 10,
             avgPrev: Math.round(avgPrev * 10) / 10,
-            latest: m7,
+            latest: mLatest,
             desc: `급감 ${ratio}% (계량기고장/불감수량)`
         };
     }
@@ -1306,7 +2346,7 @@ function getAbnormalUsageInfo(c) {
         ratio: 0,
         diff: 0,
         avgPrev: Math.round(avgPrev * 10) / 10,
-        latest: m7,
+        latest: mLatest,
         desc: '정상'
     };
 }
@@ -1407,6 +2447,18 @@ async function renderDashboardCharge() {
         blockSelect.innerHTML = `<option value="ALL">전체</option>` + sortedBlocks.map(b => `<option value="${b}">${b}</option>`).join('');
     }
     if (blockSelect) blockSelect.value = currentChargeBlock;
+
+    // 3-1. 버전 뱃지 및 테이블 월별 헤더 동적 동기화
+    const versionBadge = document.getElementById('chargeDataVersionBadge');
+    const tableMonthHeader = document.getElementById('chargeTableMonthHeader');
+    const chargeMonths = data.months || ['2026.09', '2026.10', '2026.11'];
+    if (chargeMonths && chargeMonths.length >= 3) {
+        const mStart = chargeMonths[0].replace('20', '');
+        const mEnd = chargeMonths[2].replace('20', '');
+        const endMonthNum = mEnd.split('.')[1] || mEnd;
+        if (versionBadge) versionBadge.textContent = `최근 3개월 (${mStart} ~ ${endMonthNum})`;
+        if (tableMonthHeader) tableMonthHeader.textContent = `${chargeMonths[0]} | ${chargeMonths[1]} | ${chargeMonths[2]}`;
+    }
 
     // 4. 이벤트 리스너 바인딩 (최초 1회)
     setupChargeEventListeners();
@@ -1983,23 +3035,28 @@ function renderChargeConsumerTable() {
         if (ab.type === 'DROP') tagsHtml += `<span class="tag-abnormal-drop">급감</span>`;
         if (isAll) tagsHtml += `<span style="font-size:10px; font-weight:600; padding:1px 5px; border-radius:3px; background:#F1F5F9; color:#475569; margin-left:5px; border:1px solid #CBD5E1;">${c.block}</span>`;
 
-        // 월별 사용량 표현: 2026.05 | 2026.06 | 2026.07
-        const m5 = Number(c.m2605 || 0);
-        const m6 = Number(c.m2606 || 0);
-        const m7 = Number(c.m2607 || 0);
+        // 월별 사용량 표현 (동적 3개월 지원)
+        const dMonths = (consumerChargeData && consumerChargeData.months) || ['2026.09', '2026.10', '2026.11'];
+        const m1Key = dMonths[0] ? 'm' + dMonths[0].replace('.', '') : 'm2609';
+        const m2Key = dMonths[1] ? 'm' + dMonths[1].replace('.', '') : 'm2610';
+        const m3Key = dMonths[2] ? 'm' + dMonths[2].replace('.', '') : 'm2611';
 
-        const m5Color = m5 === 0 ? '#DC2626' : '#334155';
-        const m6Color = m6 === 0 ? '#DC2626' : '#334155';
-        const m7Color = m7 === 0 ? '#DC2626' : '#059669';
+        const m1Val = Number(c[m1Key] !== undefined ? c[m1Key] : (c.m1 !== undefined ? c.m1 : (c.m2605 || 0)));
+        const m2Val = Number(c[m2Key] !== undefined ? c[m2Key] : (c.m2 !== undefined ? c.m2 : (c.m2606 || 0)));
+        const m3Val = Number(c[m3Key] !== undefined ? c[m3Key] : (c.m3 !== undefined ? c.m3 : (c.m2607 || 0)));
+
+        const m1Color = m1Val === 0 ? '#DC2626' : '#334155';
+        const m2Color = m2Val === 0 ? '#DC2626' : '#334155';
+        const m3Color = m3Val === 0 ? '#DC2626' : '#059669';
 
         const monthlyStripHtml = `
             <div class="usage-monthly-cell">
                 <div class="usage-monthly-strip">
-                    <span class="m-val" style="color:${m5Color};" title="2026.05: ${m5.toLocaleString()} m³">${m5.toLocaleString()}</span>
+                    <span class="m-val" style="color:${m1Color};" title="${dMonths[0]}: ${m1Val.toLocaleString()} m³">${m1Val.toLocaleString()}</span>
                     <span class="m-sep">|</span>
-                    <span class="m-val" style="color:${m6Color};" title="2026.06: ${m6.toLocaleString()} m³">${m6.toLocaleString()}</span>
+                    <span class="m-val" style="color:${m2Color};" title="${dMonths[1]}: ${m2Val.toLocaleString()} m³">${m2Val.toLocaleString()}</span>
                     <span class="m-sep">|</span>
-                    <span class="m-val m-latest" style="color:${m7Color};" title="2026.07: ${m7.toLocaleString()} m³">${m7.toLocaleString()} m³</span>
+                    <span class="m-val m-latest" style="color:${m3Color};" title="${dMonths[2]}: ${m3Val.toLocaleString()} m³">${m3Val.toLocaleString()} m³</span>
                 </div>
                 <div style="font-size:10px; color:#64748B; margin-top:2px;">
                     3개월: ${Math.round(c.total3m).toLocaleString()} m³ (일평균 ${c.dailyUsage.toLocaleString()} m³)
@@ -2114,6 +3171,14 @@ function renderChargeDetailPanel() {
             const zText = c.zInfo.count >= 3 ? '3개월 연속 0톤 (폐전의심)' : `${c.zInfo.count}개월 연속 0톤`;
             const blockPrefix = isAll ? `<span style="font-weight:700; color:#334155; margin-right:4px;">[${c.block}]</span>` : '';
 
+            const mArr = (consumerChargeData && consumerChargeData.months) || ['2026.09', '2026.10', '2026.11'];
+            const l1 = (mArr[0].split('.')[1] || '9') + '월';
+            const l2 = (mArr[1].split('.')[1] || '10') + '월';
+            const l3 = (mArr[2].split('.')[1] || '11') + '월';
+            const v1 = c.m1 !== undefined ? c.m1 : (c.m2609 !== undefined ? c.m2609 : (c.m2605 || 0));
+            const v2 = c.m2 !== undefined ? c.m2 : (c.m2610 !== undefined ? c.m2610 : (c.m2606 || 0));
+            const v3 = c.m3 !== undefined ? c.m3 : (c.m2611 !== undefined ? c.m2611 : (c.m2607 || 0));
+
             html += `
                 <div class="caliber-issue-item" data-cno="${c.cNo}" data-block="${c.block}" style="border-left: 4px solid #DC2626; background:#FEF2F2;" title="클릭 시 좌측 표에서 [${c.name}] 상세 보기">
                     <div class="lci-left">
@@ -2128,7 +3193,7 @@ function renderChargeDetailPanel() {
                     </div>
                     <div class="lci-right">
                         <div class="lci-usage" style="color:#DC2626;">0 m³/일</div>
-                        <div class="lci-total3m" style="color:#64748B; font-size:10.5px;">5월:${c.m2605} | 6월:${c.m2606} | 7월:${c.m2607}m³</div>
+                        <div class="lci-total3m" style="color:#64748B; font-size:10.5px;">${l1}:${v1} | ${l2}:${v2} | ${l3}:${v3}m³</div>
                         <div style="font-size:10px; color:#DC2626; font-weight:600; margin-top:2px;"><i class="fa-solid fa-arrow-left"></i> 좌측 표 조회</div>
                     </div>
                 </div>
@@ -2290,9 +3355,17 @@ function exportConsumerChargeExcel() {
         exportList = exportList.filter(c => c.evalType === 'undersized');
     }
 
+    const exMonths = (consumerChargeData && consumerChargeData.months) || ['2026.09', '2026.10', '2026.11'];
+    const col1 = `${exMonths[0].replace('.', '년')}월(m³)`;
+    const col2 = `${exMonths[1].replace('.', '년')}월(m³)`;
+    const col3 = `${exMonths[2].replace('.', '년')}월(m³)`;
+
     const excelRows = exportList.map((c, idx) => {
         const z = getZeroMonthsInfo(c);
         const ab = getAbnormalUsageInfo(c);
+        const v1 = c.m1 !== undefined ? c.m1 : (c.m2609 !== undefined ? c.m2609 : (c.m2605 || 0));
+        const v2 = c.m2 !== undefined ? c.m2 : (c.m2610 !== undefined ? c.m2610 : (c.m2606 || 0));
+        const v3 = c.m3 !== undefined ? c.m3 : (c.m2611 !== undefined ? c.m2611 : (c.m2607 || 0));
         return {
             "순번": idx + 1,
             "블록명": c.block,
@@ -2300,9 +3373,9 @@ function exportConsumerChargeExcel() {
             "수용가명": c.name,
             "업종": c.type,
             "설치구경(mm)": c.caliber,
-            "2026년05월(m³)": c.m2605,
-            "2026년06월(m³)": c.m2606,
-            "2026년07월(m³)": c.m2607,
+            [col1]: v1,
+            [col2]: v2,
+            [col3]: v3,
             "3개월합계(m³)": c.total3m,
             "최근일사용량(m³/일)": c.dailyUsage,
             "0톤연속상태": z.count > 0 ? `${z.count}개월 연속 0톤` : "정상사용",
@@ -4366,8 +5439,8 @@ function initUIEvents() {
     const btnMenuRevenue = document.getElementById('btnMenuRevenue');
     if (btnMenuRevenue) {
         btnMenuRevenue.addEventListener('click', (e) => {
-            // 드롭다운 호버가 아닌 직접 클릭 시 대시보드 1.공급량분석으로 전환
-            switchMainView('DASHBOARD', 'dash-supply');
+            // 드롭다운 호버가 아닌 직접 클릭 시 대시보드 0.대시보드로 전환
+            switchMainView('DASHBOARD', 'dash-overview');
         });
     }
 
@@ -4861,7 +5934,7 @@ function initUIEvents() {
             mapManager.filterByBlock(e.target.value);
             renderFacilityList();
             if (currentMainView === 'DASHBOARD') {
-                const activeTab = document.querySelector('.dash-tab-btn.active')?.dataset.tab || 'dash-supply';
+                const activeTab = document.querySelector('.dash-tab-btn.active')?.dataset.tab || 'dash-overview';
                 switchDashboardTab(activeTab);
             }
         });
@@ -4877,13 +5950,13 @@ function initUIEvents() {
         });
     });
 
-    // 5. URL 쿼리 파라미터에 따른 초기 뷰 자동 전환 (?view=DASHBOARD&tab=dash-supply&block=구산3)
+    // 5. URL 쿼리 파라미터에 따른 초기 뷰 자동 전환 (?view=DASHBOARD&tab=dash-overview&block=구산3)
     try {
         const urlParams = new URLSearchParams(window.location.search);
         const reqView = urlParams.get('view');
         const reqBlock = urlParams.get('block');
         if (reqView === 'DASHBOARD') {
-            switchMainView('DASHBOARD', urlParams.get('tab') || 'dash-supply');
+            switchMainView('DASHBOARD', urlParams.get('tab') || 'dash-overview');
             if (reqBlock && typeof selectSupplyBlock === 'function') {
                 setTimeout(() => {
                     selectSupplyBlock(reqBlock);
@@ -4896,7 +5969,13 @@ function initUIEvents() {
         console.warn("[App] URL 파라미터 파싱 무시:", e);
     }
 
-    document.getElementById('btnClosePanel').addEventListener('click', closeSidePanel);
+    const btnCloseP = document.getElementById('btnClosePanel');
+    if (btnCloseP) {
+        btnCloseP.onclick = closeSidePanel;
+        btnCloseP.addEventListener('click', closeSidePanel);
+        btnCloseP.addEventListener('pointerup', closeSidePanel);
+        btnCloseP.addEventListener('touchend', closeSidePanel);
+    }
 
     document.getElementById('inputFacilitySearch').addEventListener('input', (e) => {
         renderFacilityList(e.target.value);
@@ -4978,7 +6057,10 @@ function openSidePanel() {
 }
 window.openSidePanel = openSidePanel;
 
-function closeSidePanel() {
+function closeSidePanel(e) {
+    if (e && typeof e.stopPropagation === 'function') {
+        e.stopPropagation();
+    }
     const sidePanel = document.getElementById('sidePanel');
     if (sidePanel) sidePanel.classList.add('collapsed');
     const mainContent = document.querySelector('.main-content');
@@ -4988,6 +6070,17 @@ function closeSidePanel() {
         toggleBtn.classList.add('panel-collapsed');
         toggleBtn.innerHTML = '<i class="fa-solid fa-clipboard-list"></i> <span id="floatingPanelText">조사·DB 패널</span>';
     }
+
+    // [사용자 요구사항] 패널을 닫았을 때 관망에 표현된 위치아이콘(핀/마커) 및 블록 하이라이트 즉시 제거
+    if (window.mapManager) {
+        if (typeof window.mapManager.clearVerificationMarker === 'function') {
+            window.mapManager.clearVerificationMarker();
+        }
+        if (typeof window.mapManager.clearBlockHighlight === 'function') {
+            window.mapManager.clearBlockHighlight();
+        }
+    }
+
     setTimeout(() => {
         if (window.mapManager && window.mapManager.map) {
             window.mapManager.map.invalidateSize();
@@ -5431,6 +6524,11 @@ function initVWorldMapControls() {
     let searchDebounceTimer = null;
 
     const openSearchModal = () => {
+        // 관망도 화면이 아니면 먼저 관망도(3. 공종관리 GIS) 화면으로 전환
+        if (typeof switchMainView === 'function' && currentMainView !== 'MAP') {
+            switchMainView('MAP');
+        }
+
         if (!searchBackdrop) return;
         searchBackdrop.style.display = 'flex';
         if (btnMapSearchToggle) btnMapSearchToggle.classList.add('active');
@@ -5439,27 +6537,39 @@ function initVWorldMapControls() {
                 addrInput.focus();
                 addrInput.select();
             }
-        }, 60);
+        }, 80);
     };
+    window.openAddressSearchModal = openSearchModal;
 
-    const closeSearchModal = () => {
+    const closeSearchModal = (e) => {
+        if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
+        if (e && typeof e.preventDefault === 'function') e.preventDefault();
         if (!searchBackdrop) return;
         searchBackdrop.style.display = 'none';
+        if (dropdown) dropdown.style.display = 'none';
+        if (addrInput) addrInput.blur();
         if (btnMapSearchToggle) btnMapSearchToggle.classList.remove('active');
     };
+    window.closeAddressSearchModal = closeSearchModal;
 
-    // Global 단축키: Ctrl + F (Mac은 Cmd + F), ESC 닫기
-    document.addEventListener('keydown', (e) => {
-        if ((e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'F')) {
+    // Global 단축키: Ctrl + F (Mac은 Cmd + F, 한글 'ㄹ' 대응), ESC 닫기
+    const handleGlobalSearchKey = (e) => {
+        if ((e.ctrlKey || e.metaKey) && (e.code === 'KeyF' || e.key === 'f' || e.key === 'F' || e.key === 'ㄹ')) {
             e.preventDefault();
+            e.stopPropagation();
             const isOpen = searchBackdrop && searchBackdrop.style.display === 'flex';
             if (isOpen) {
-                if (addrInput) addrInput.focus();
+                if (addrInput) {
+                    addrInput.focus();
+                    addrInput.select();
+                }
             } else {
                 openSearchModal();
             }
         } else if (e.key === 'Escape') {
-            if (searchBackdrop && searchBackdrop.style.display === 'flex') {
+            const isOpen = searchBackdrop && searchBackdrop.style.display === 'flex';
+            if (isOpen) {
+                e.preventDefault();
                 closeSearchModal();
             }
             if (mapManager && typeof mapManager.closeDockedRoadview === 'function') {
@@ -5472,25 +6582,36 @@ function initVWorldMapControls() {
                 }
             }
         }
-    });
+    };
+    window.addEventListener('keydown', handleGlobalSearchKey, true);
+    document.addEventListener('keydown', handleGlobalSearchKey);
 
     if (btnMapSearchToggle) {
-        btnMapSearchToggle.addEventListener('click', (e) => {
-            e.stopPropagation();
+        btnMapSearchToggle.onclick = (e) => {
+            if (e) { e.preventDefault(); e.stopPropagation(); }
             const isOpen = searchBackdrop && searchBackdrop.style.display === 'flex';
-            if (isOpen) closeSearchModal();
+            if (isOpen) closeSearchModal(e);
             else openSearchModal();
+        };
+        btnMapSearchToggle.addEventListener('pointerdown', (e) => {
+            e.stopPropagation();
         });
     }
 
     if (btnVsmClose) {
+        btnVsmClose.onclick = (e) => {
+            if (e) { e.preventDefault(); e.stopPropagation(); }
+            closeSearchModal(e);
+        };
         btnVsmClose.addEventListener('click', closeSearchModal);
+        btnVsmClose.addEventListener('pointerup', closeSearchModal);
+        btnVsmClose.addEventListener('touchend', closeSearchModal);
     }
 
     if (searchBackdrop) {
         searchBackdrop.addEventListener('click', (e) => {
             if (e.target === searchBackdrop) {
-                closeSearchModal();
+                closeSearchModal(e);
             }
         });
     }
@@ -5586,6 +6707,12 @@ function initVWorldMapControls() {
                     } else if (item.category === '상수도관로' || item.facilityType === 'PIPE') {
                         catIcon = '<i class="fa-solid fa-arrows-left-right"></i>';
                         catClass = 'cat-pipe';
+                    } else if (item.category === '상호/지명' || item._type === 'STORE' || item.source?.includes('상호')) {
+                        catIcon = '<i class="fa-solid fa-store"></i>';
+                        catClass = 'cat-office';
+                    } else if (item._type === 'POI' || item.category?.includes('장소') || item.category?.includes('랜드마크')) {
+                        catIcon = '<i class="fa-solid fa-map-location-dot"></i>';
+                        catClass = 'cat-office';
                     }
 
                     return `

@@ -395,6 +395,7 @@ body, html {
     align-items: center;
     gap: 8px;
     pointer-events: auto;
+    touch-action: none;
 }
 
 .btn-map-ctrl-fab {
@@ -1332,12 +1333,27 @@ body, html {
 }
 
 .btn-close-panel {
-    background: none;
-    border: none;
-    font-size: 18px;
-    color: var(--text-muted);
+    background: #F1F5F9;
+    border: 1px solid #CBD5E1;
+    font-size: 15px;
+    color: #64748B;
     cursor: pointer;
-    padding: 4px;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s;
+    pointer-events: auto;
+    flex-shrink: 0;
+}
+
+.btn-close-panel:hover,
+.btn-close-panel:active {
+    background: #FEE2E2;
+    color: #EF4444;
+    border-color: #FCA5A5;
 }
 
 .panel-tabs {
@@ -10070,6 +10086,45 @@ body.theme-navy .glc-size-num {
     color: #60A5FA;
 }
 
+/* GIS 레이어 하위목록 색상 선택 및 라벨 필드 선택 드롭다운 */
+.glc-color-select {
+    padding: 1px 4px;
+    font-size: 11px;
+    font-weight: 600;
+    border: 1px solid #CBD5E1;
+    border-radius: 4px;
+    background: #FFFFFF;
+    color: #1E293B;
+    outline: none;
+    cursor: pointer;
+    margin-left: auto;
+    height: 22px;
+}
+body.theme-navy .glc-color-select {
+    background: #1E293B;
+    border-color: #475569;
+    color: #F1F5F9;
+}
+
+.glc-label-field-select {
+    width: 100%;
+    padding: 2px 6px;
+    font-size: 10.5px;
+    border: 1px solid #CBD5E1;
+    border-radius: 4px;
+    background: #FFFFFF;
+    color: #1E293B;
+    outline: none;
+    cursor: pointer;
+    margin-top: 4px;
+    height: 24px;
+}
+body.theme-navy .glc-label-field-select {
+    background: #1E293B;
+    border-color: #475569;
+    color: #F1F5F9;
+}
+
 /* ========================================================================= */
 /* 지도 우측 상단 툴바 그룹 및 모바일 반응형 접기/펼치기                    */
 /* ========================================================================= */
@@ -10829,3 +10884,538 @@ body.theme-navy .glc-slider-round {
 
 
 
+
+/* ========================================================================= */
+/* [2. 유수율분석 0. 대시보드] 매월 특이사항 종합 알림판 스타일              */
+/* ========================================================================= */
+.overview-container {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    width: 100%;
+    max-width: 1800px;
+    margin: 0 auto;
+}
+
+.overview-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+    background: #FFFFFF;
+    padding: 14px 20px;
+    border-radius: var(--radius-md, 12px);
+    border: 1px solid var(--border, #E2E8F0);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+}
+
+.overview-title-group h3 {
+    font-size: 17px;
+    font-weight: 700;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-primary, #0F172A);
+}
+
+.overview-subdesc {
+    font-size: 12px;
+    color: var(--text-secondary, #64748B);
+    margin: 3px 0 0 0;
+}
+
+.overview-controls-group {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.overview-filter-pills {
+    display: flex;
+    gap: 4px;
+    background: #F1F5F9;
+    padding: 4px;
+    border-radius: 8px;
+    border: 1px solid #E2E8F0;
+}
+
+.ov-pill-btn {
+    background: transparent;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #475569;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    transition: all 0.2s;
+}
+
+.ov-pill-btn:hover {
+    color: #0F172A;
+    background: rgba(255, 255, 255, 0.7);
+}
+
+.ov-pill-btn.active {
+    background: #0284C7;
+    color: #FFFFFF;
+    box-shadow: 0 2px 4px rgba(2, 132, 199, 0.3);
+}
+
+/* 상단 4대 요약 KPI 바 */
+.overview-kpi-summary-bar {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 14px;
+}
+
+.ov-kpi-card {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    background: #FFFFFF;
+    border-radius: 12px;
+    padding: 14px 18px;
+    border: 1px solid #E2E8F0;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.03);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.ov-kpi-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 14px rgba(0, 0, 0, 0.08);
+}
+
+.ov-kpi-supply { border-left: 4px solid #0284C7; }
+.ov-kpi-charge { border-left: 4px solid #10B981; }
+.ov-kpi-yield { border-left: 4px solid #8B5CF6; }
+.ov-kpi-lowyield { border-left: 4px solid #F59E0B; }
+
+.ov-kpi-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 19px;
+    flex-shrink: 0;
+}
+
+.ov-kpi-supply .ov-kpi-icon { background: rgba(2, 132, 199, 0.12); color: #0284C7; }
+.ov-kpi-charge .ov-kpi-icon { background: rgba(16, 185, 129, 0.12); color: #10B981; }
+.ov-kpi-yield .ov-kpi-icon { background: rgba(139, 92, 246, 0.12); color: #8B5CF6; }
+.ov-kpi-lowyield .ov-kpi-icon { background: rgba(245, 158, 11, 0.12); color: #F59E0B; }
+
+.ov-kpi-content {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.ov-kpi-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #64748B;
+}
+
+.ov-kpi-val {
+    font-size: 22px;
+    font-weight: 800;
+    color: #0F172A;
+    line-height: 1.15;
+}
+
+.ov-kpi-val small {
+    font-size: 13px;
+    font-weight: 600;
+    color: #64748B;
+    margin-left: 4px;
+}
+
+.ov-kpi-tags {
+    display: flex;
+    gap: 4px;
+    margin-top: 4px;
+    flex-wrap: wrap;
+}
+
+.ov-badge-danger {
+    background: #FEE2E2;
+    color: #B91C1C;
+    font-size: 10.5px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+.ov-badge-warning {
+    background: #FEF3C7;
+    color: #B45309;
+    font-size: 10.5px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+.ov-badge-accent {
+    background: #E0E7FF;
+    color: #4338CA;
+    font-size: 10.5px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+.ov-badge-success {
+    background: #DCFCE7;
+    color: #15803D;
+    font-size: 10.5px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+/* 3개 영역 그리드 레이아웃 */
+.overview-grid-container {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 18px;
+    align-items: start;
+}
+
+.overview-card {
+    background: #FFFFFF;
+    border-radius: 14px;
+    border: 1px solid #E2E8F0;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.overview-card-header {
+    padding: 14px 18px;
+    border-bottom: 1px solid #E2E8F0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.header-supply {
+    background: linear-gradient(135deg, rgba(2, 132, 199, 0.08), rgba(2, 132, 199, 0.02));
+    border-top: 3px solid #0284C7;
+}
+
+.header-charge {
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.08), rgba(16, 185, 129, 0.02));
+    border-top: 3px solid #10B981;
+}
+
+.header-yield {
+    background: linear-gradient(135deg, rgba(139, 92, 246, 0.08), rgba(139, 92, 246, 0.02));
+    border-top: 3px solid #8B5CF6;
+}
+
+.och-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.och-title h4 {
+    font-size: 15px;
+    font-weight: 700;
+    margin: 0;
+    color: #0F172A;
+}
+
+.och-badge {
+    margin-left: auto;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 12px;
+    background: #E2E8F0;
+    color: #334155;
+}
+
+.och-sub {
+    font-size: 11.5px;
+    color: #64748B;
+}
+
+.overview-card-body {
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.ov-subgroup {
+    background: #F8FAFC;
+    border-radius: 10px;
+    padding: 12px;
+    border: 1px solid #F1F5F9;
+}
+
+.ov-subgroup-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 2px;
+}
+
+.ov-subgroup-title h5 {
+    font-size: 12.5px;
+    font-weight: 700;
+    margin: 0;
+    color: #334155;
+}
+
+.ov-indicator {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.dot-red { background: #EF4444; }
+.dot-orange { background: #F59E0B; }
+.dot-purple { background: #8B5CF6; }
+.dot-blue { background: #0284C7; }
+.dot-green { background: #10B981; }
+
+.ov-sub-count {
+    margin-left: auto;
+    font-size: 11px;
+    font-weight: 700;
+    color: #64748B;
+}
+
+.ov-subgroup-desc {
+    font-size: 11px;
+    color: #64748B;
+    margin: 0 0 8px 14px;
+}
+
+.ov-list-box {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 280px;
+    overflow-y: auto;
+    padding-right: 2px;
+}
+
+.ov-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 10px;
+    background: #FFFFFF;
+    border-radius: 8px;
+    border: 1px solid #E2E8F0;
+    font-size: 12px;
+    transition: all 0.15s;
+    gap: 8px;
+}
+
+.ov-item:hover {
+    border-color: #94A3B8;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+}
+
+.ov-item-left {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.ov-item-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.ov-item-name {
+    font-weight: 700;
+    color: #0F172A;
+    cursor: pointer;
+    text-decoration: none;
+}
+
+.ov-item-name:hover {
+    color: #0284C7;
+    text-decoration: underline;
+}
+
+.ov-item-detail {
+    font-size: 11px;
+    color: #64748B;
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.ov-item-right {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+.ov-action-btn {
+    background: #F1F5F9;
+    border: 1px solid #CBD5E1;
+    border-radius: 5px;
+    padding: 4px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #334155;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    transition: all 0.15s;
+    white-space: nowrap;
+}
+
+.ov-action-btn:hover {
+    background: #E2E8F0;
+    color: #0F172A;
+}
+
+.ov-action-btn.primary {
+    background: #0284C7;
+    color: #FFFFFF;
+    border-color: #0284C7;
+}
+
+.ov-action-btn.primary:hover {
+    background: #0369A1;
+}
+
+.ov-empty-msg {
+    padding: 16px 12px;
+    text-align: center;
+    font-size: 11.5px;
+    color: #94A3B8;
+    background: #FFFFFF;
+    border-radius: 6px;
+    border: 1px dashed #E2E8F0;
+}
+
+/* 다크 테마 지원 (body.theme-navy) */
+body.theme-navy .overview-toolbar,
+body.theme-navy .ov-kpi-card,
+body.theme-navy .overview-card,
+body.theme-navy .ov-item {
+    background: #1E293B;
+    border-color: #334155;
+}
+
+body.theme-navy .overview-title-group h3,
+body.theme-navy .ov-kpi-val,
+body.theme-navy .och-title h4,
+body.theme-navy .ov-item-name {
+    color: #F8FAFC;
+}
+
+body.theme-navy .overview-subdesc,
+body.theme-navy .ov-kpi-label,
+body.theme-navy .ov-kpi-val small,
+body.theme-navy .och-sub,
+body.theme-navy .ov-subgroup-desc,
+body.theme-navy .ov-item-detail {
+    color: #94A3B8;
+}
+
+body.theme-navy .overview-filter-pills,
+body.theme-navy .ov-subgroup {
+    background: #0F172A;
+    border-color: #1E293B;
+}
+
+body.theme-navy .ov-pill-btn {
+    color: #94A3B8;
+}
+
+body.theme-navy .ov-pill-btn:hover {
+    color: #F8FAFC;
+    background: #1E293B;
+}
+
+body.theme-navy .ov-pill-btn.active {
+    background: #0284C7;
+    color: #FFFFFF;
+}
+
+body.theme-navy .ov-subgroup-title h5 {
+    color: #E2E8F0;
+}
+
+body.theme-navy .ov-action-btn {
+    background: #334155;
+    border-color: #475569;
+    color: #E2E8F0;
+}
+
+body.theme-navy .ov-action-btn:hover {
+    background: #475569;
+    color: #FFFFFF;
+}
+
+body.theme-navy .ov-empty-msg {
+    background: #0F172A;
+    border-color: #334155;
+    color: #64748B;
+}
+
+/* 모바일 & 태블릿 반응형 레이아웃 */
+@media (max-width: 1200px) {
+    .overview-grid-container {
+        grid-template-columns: 1fr;
+    }
+    .overview-kpi-summary-bar {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 768px) {
+    .overview-toolbar {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
+        padding: 12px;
+    }
+    .overview-controls-group {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 8px;
+    }
+    .overview-filter-pills {
+        overflow-x: auto;
+        white-space: nowrap;
+    }
+    .overview-kpi-summary-bar {
+        grid-template-columns: 1fr;
+        gap: 10px;
+    }
+    .ov-kpi-card {
+        padding: 10px 14px;
+    }
+    .ov-list-box {
+        max-height: 240px;
+    }
+}
