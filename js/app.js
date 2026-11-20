@@ -415,33 +415,106 @@ function applyOverviewFilter(filter) {
 }
 
 /**
- * 김해시 전체 블록 목록 통합 도출 유틸
+ * 계통도(KIMHAE_TOPOLOGY_DATA) 소블록(SUB) 68개 표준 목록 및 정규화 유틸
+ */
+const DEFAULT_TOPOLOGY_SUB_BLOCKS = [
+    '구산1', '구산2', '구산3', '구산4',
+    '내외1', '내외2', '내외3', '내외4', '내외5', '내외6', '내외7', '내외8',
+    '대동1', '대동2', '대동3', '대동4', '대동5', '대동6',
+    '동상1', '동상2',
+    '병동농공',
+    '부원6', '부원7-1', '부원7-2', '부원7-3', '부원8',
+    '북부1', '북부2', '북부3', '북부4', '북부5', '북부6',
+    '상동1', '상동2', '상동3',
+    '생림1', '생림2', '생림3',
+    '율하2',
+    '장유1', '장유2', '장유3', '장유4', '장유5', '장유6', '장유7', '장유8', '장유9',
+    '진례직결',
+    '진영1', '진영2', '진영3', '진영4', '진영5', '진영6', '진영7',
+    '칠산서부1', '칠산서부2', '칠산서부3',
+    '테크노산단',
+    '한림직결1', '한림직결2', '한림직결3', '한림직결4', '한림직결5',
+    '활천1', '활천2', '활천3'
+];
+
+let _cachedTopologySubBlocks = null;
+let _cachedTopologySubBlockSet = null;
+
+function normalizeTopologySubBlockName(rawName) {
+    if (!rawName) return '';
+    let name = String(rawName).trim();
+    if (name === '진례직결(소)') return '진례직결';
+    if (name === '병동농공(소)') return '병동농공';
+    if (name === '한림5(소)' || name === '한림5') return '한림직결5';
+    if (/^한림([1-5])$/.test(name)) {
+        return '한림직결' + RegExp.$1;
+    }
+    return name;
+}
+
+function getTopologySubBlocks() {
+    if (_cachedTopologySubBlocks) return _cachedTopologySubBlocks;
+
+    const blockSet = new Set();
+    const regions = ['myeongdong', 'samgye', 'deoksan'];
+
+    // 1. window.KIMHAE_TOPOLOGY_DATA 및 localStorage 동적 추출
+    if (typeof window !== 'undefined' && window.KIMHAE_TOPOLOGY_DATA) {
+        regions.forEach(rKey => {
+            let rData = null;
+            if (typeof localStorage !== 'undefined') {
+                const saved = localStorage.getItem('KIMHAE_TOPOLOGY_CUSTOM_' + rKey);
+                if (saved) {
+                    try { rData = JSON.parse(saved); } catch (e) {}
+                }
+            }
+            if (!rData && window.KIMHAE_TOPOLOGY_DATA[rKey]) {
+                rData = window.KIMHAE_TOPOLOGY_DATA[rKey];
+            }
+            if (rData && Array.isArray(rData.nodes)) {
+                rData.nodes.forEach(n => {
+                    if (n && n.type === 'SUB' && n.label) {
+                        const norm = normalizeTopologySubBlockName(n.label);
+                        if (norm) blockSet.add(norm);
+                    }
+                });
+            }
+        });
+    }
+
+    // 2. 기본 68개 소블록 보장
+    DEFAULT_TOPOLOGY_SUB_BLOCKS.forEach(b => blockSet.add(b));
+
+    _cachedTopologySubBlocks = Array.from(blockSet).sort((a, b) => a.localeCompare(b, 'ko', { numeric: true }));
+    _cachedTopologySubBlockSet = new Set(_cachedTopologySubBlocks);
+    return _cachedTopologySubBlocks;
+}
+
+function isTopologySubBlock(bName) {
+    if (!bName) return false;
+    getTopologySubBlocks();
+    const norm = normalizeTopologySubBlockName(bName);
+    if (_cachedTopologySubBlockSet.has(norm) || _cachedTopologySubBlockSet.has(bName)) {
+        return true;
+    }
+    const bare = bName.replace(/\(소\)/g, '').trim();
+    if (_cachedTopologySubBlockSet.has(bare)) return true;
+    return false;
+}
+
+window.getTopologySubBlocks = getTopologySubBlocks;
+window.isTopologySubBlock = isTopologySubBlock;
+window.normalizeTopologySubBlockName = normalizeTopologySubBlockName;
+window.invalidateTopologySubBlocksCache = function() {
+    _cachedTopologySubBlocks = null;
+    _cachedTopologySubBlockSet = null;
+};
+
+/**
+ * 김해시 유수율 분석 소블록 목록 도출 유틸 (계통도 소블록 68개 전용)
  */
 function getOverviewAllBlocks() {
-    const set = new Set();
-    if (typeof getAllYieldReportBlocks === 'function') {
-        getAllYieldReportBlocks().forEach(b => {
-            if (b && !['W', 'w', 'undefined', 'null', 'B1', 'B7', 'B8', '비어있음'].includes(b)) set.add(b);
-        });
-    }
-    if (window.VERIFIED_YIELD_DATA) {
-        Object.keys(window.VERIFIED_YIELD_DATA).forEach(b => {
-            if (b && !['W', 'w', 'undefined', 'null', 'B1', 'B7', 'B8', '비어있음'].includes(b)) set.add(b);
-        });
-    }
-    if (window.GlobalWaterData && window.GlobalWaterData.blocks) {
-        window.GlobalWaterData.blocks.forEach(b => {
-            if (b && !['W', 'w', 'undefined', 'null', 'B1', 'B7', 'B8', '비어있음'].includes(b)) set.add(b);
-        });
-    }
-    if (window.GlobalWaterData && window.GlobalWaterData.supplyData) {
-        Object.keys(window.GlobalWaterData.supplyData).slice(-30).forEach(d => {
-            Object.keys(window.GlobalWaterData.supplyData[d] || {}).forEach(b => {
-                if (b && !['W', 'w', 'undefined', 'null', 'B1', 'B7', 'B8', '비어있음'].includes(b)) set.add(b);
-            });
-        });
-    }
-    return Array.from(set).sort();
+    return getTopologySubBlocks();
 }
 
 /**
@@ -581,6 +654,7 @@ function computeChargeAnomalies(monthKey) {
     const summaryData = window.CONSUMER_CHARGE_DATA.summary || {};
 
     Object.keys(blocksData).forEach(bName => {
+        if (!isTopologySubBlock(bName)) return;
         const cList = blocksData[bName] || [];
         cList.forEach(c => {
             const m1 = typeof c.m1 === 'number' ? c.m1 : 0;
@@ -629,6 +703,7 @@ function computeChargeAnomalies(monthKey) {
     });
 
     Object.keys(summaryData).forEach(bName => {
+        if (!isTopologySubBlock(bName)) return;
         const s = summaryData[bName];
         if (s && s.totalDailyUsage > 0) {
             blockDiffs.push({
@@ -1560,80 +1635,8 @@ function renderDashboardSupply() {
     if (activeDates.length === 0) activeDates = allDates.slice(-30);
     currentActiveSupplyDates = activeDates;
 
-    // 블록 리스트 도출 (김해시 131개 전체 소블록/중블록/배수지 완전 통합 추출)
-    const blockSet = new Set();
-
-    // 1. 김해시 전체 표준/검증 블록 목록 (131개 소블록/중블록/배수지)
-    if (typeof getAllYieldReportBlocks === 'function') {
-        getAllYieldReportBlocks().forEach(b => {
-            if (b && !['W', 'w', 'undefined', 'null', 'B1', 'B7', 'B8', '비어있음'].includes(b)) {
-                blockSet.add(b);
-            }
-        });
-    }
-
-    // 2. 검증 데이터셋(VERIFIED_YIELD_DATA)의 모든 블록
-    if (window.VERIFIED_YIELD_DATA) {
-        Object.keys(window.VERIFIED_YIELD_DATA).forEach(b => {
-            if (b && !['W', 'w', 'undefined', 'null', 'B1', 'B7', 'B8', '비어있음'].includes(b)) {
-                blockSet.add(b);
-            }
-        });
-    }
-
-    // 3. 클라우드 전역 객체 블록 목록
-    if (window.GlobalWaterData && Array.isArray(window.GlobalWaterData.blocks)) {
-        window.GlobalWaterData.blocks.forEach(b => {
-            if (b && !['W', 'w', 'undefined', 'null', 'B1', 'B7', 'B8', '비어있음'].includes(b)) {
-                blockSet.add(b);
-            }
-        });
-    }
-
-    // 4. 공급량 데이터의 전체 날짜에서 측정된 모든 블록 (활성 기간뿐 아니라 전체 601일 날짜)
-    if (window.GlobalWaterData && window.GlobalWaterData.supplyData) {
-        Object.keys(window.GlobalWaterData.supplyData).forEach(d => {
-            Object.keys(window.GlobalWaterData.supplyData[d] || {}).forEach(b => {
-                if (b && !['W', 'w', 'undefined', 'null', 'B1', 'B7', 'B8', '비어있음'].includes(b)) {
-                    blockSet.add(b);
-                }
-            });
-        });
-    }
-
-    // 5. 부과량 수용가 데이터셋의 블록 목록
-    if (window.CONSUMER_CHARGE_DATA && window.CONSUMER_CHARGE_DATA.blocks) {
-        Object.keys(window.CONSUMER_CHARGE_DATA.blocks).forEach(b => {
-            if (b && !['W', 'w', 'undefined', 'null', 'B1', 'B7', 'B8', '비어있음'].includes(b)) {
-                blockSet.add(b);
-            }
-        });
-    }
-
-    // 6. 기본 필수 소블록 보장
-    const defaultEssentialBlocks = [
-        '감노', '구산1', '구산2', '구산3', '구산4',
-        '금음마을', '내덕지구', '내외1', '내외2', '내외3', '내외4', '내외5', '내외6', '내외7', '내외8',
-        '대감1', '대감2', '대동1', '대동2', '대동3', '대동4', '대동5', '대동6', '대동배수지', '대동산단1', '대동산단2', '대동산단3', '대동산단4', '대동첨단',
-        '덕산정수장(대동라인)', '덕산정수장(상동라인)', '동명', '동상1', '동상2', '동지역직결',
-        '명동정수장(메인)', '명동정수장(장유라인)', '명동정수장(진영라인)', '명동산단', '망천직결',
-        '병동농공', '부봉지구', '부원6', '부원7-1', '부원7-2', '부원7-3', '부원8',
-        '북부1', '북부2', '북부3', '북부4', '북부5', '북부6',
-        '불암1', '불암2', '불암3', '불암4', '불암5', '불암6',
-        '삼계1', '삼계2', '삼계정수장(동지역직결)', '삼안1', '삼안2', '삼안3', '삼안4', '삼안5', '삼안6', '삼어지구',
-        '상동1', '상동1배수지', '상동2', '상동2배수지', '상동3', '서김해산단',
-        '생림1', '생림2', '생림3', '생림배수지', '신천산단배수지', '안동', '어방배수지', '어방지구', '예안', '율하2', '율하배수지',
-        '장방', '장유1', '장유2', '장유3', '장유4', '장유5', '장유6', '장유7', '장유8', '장유9', '장유고지배수지',
-        '주동', '주촌1', '주촌2', '주촌3', '주촌4', '주촌5', '주촌6', '주촌7', '주촌직결2',
-        '진례직결', '진영1', '진영2', '진영3', '진영3-7', '진영4', '진영5', '진영6', '진영7', '진영구', '진영배수지',
-        '칠산서부1', '칠산서부2', '칠산서부3',
-        '한림직결1', '한림직결2', '한림직결3', '한림직결4', '한림직결5',
-        '활천1', '활천2', '활천3', '활천4', '활천5'
-    ];
-    defaultEssentialBlocks.forEach(b => blockSet.add(b));
-
-    let blocks = Array.from(blockSet).filter(b => b && !['W', 'w', 'undefined', 'null', 'B1', 'B7', 'B8', '비어있음'].includes(b))
-                  .sort((a, b) => a.localeCompare(b, 'ko', { numeric: true }));
+    // 블록 리스트 도출: 계통도 소블록(SUB) 68개 전용 도출
+    let blocks = getTopologySubBlocks().slice();
 
     // 검색창 키워드 필터
     const searchInput = document.getElementById('supplyBlockSearchInput');
@@ -1660,7 +1663,7 @@ function renderDashboardSupply() {
     // 카운트 뱃지 갱신
     const countBadge = document.getElementById('supplyTableCountBadge');
     if (countBadge) {
-        countBadge.textContent = `${activeDates.length}일분 / ${blocks.length}개 블록`;
+        countBadge.textContent = `${activeDates.length}일분 / ${blocks.length}개 소블록`;
     }
 
     // 현재 선택 블록 검증
@@ -2440,11 +2443,13 @@ async function renderDashboardCharge() {
         currentChargeBlock = 'ALL';
     }
 
-    // 3. 블록 드롭다운 옵션 채우기 (최상단에 '전체' 추가)
+    // 3. 블록 드롭다운 옵션 채우기 (최상단에 '전체' 추가, 계통도 소블록 68개 필터)
     const blockSelect = document.getElementById('chargeBlockSelect');
     if (blockSelect && blockSelect.options.length <= 2) {
-        const sortedBlocks = Object.keys(data.blocks).sort((a, b) => a.localeCompare(b, 'ko', { numeric: true }));
-        blockSelect.innerHTML = `<option value="ALL">전체</option>` + sortedBlocks.map(b => `<option value="${b}">${b}</option>`).join('');
+        const sortedBlocks = Object.keys(data.blocks)
+            .filter(b => isTopologySubBlock(b))
+            .sort((a, b) => a.localeCompare(b, 'ko', { numeric: true }));
+        blockSelect.innerHTML = `<option value="ALL">전체 (소블록 ${sortedBlocks.length}개)</option>` + sortedBlocks.map(b => `<option value="${b}">${b}</option>`).join('');
     }
     if (blockSelect) blockSelect.value = currentChargeBlock;
 
@@ -2703,15 +2708,18 @@ function focusConsumerInTable(cNo, blockName) {
 }
 
 /**
- * 김해시 전체 수용가 목록 반환 (지연 병합 및 캐싱)
+ * 김해시 전체 수용가 목록 반환 (계통도 소블록 68개 전용, 지연 병합 및 캐싱)
  */
 function getAllConsumerList() {
     if (!consumerChargeData || !consumerChargeData.blocks) return [];
     if (!consumerChargeData._allList) {
         let combined = [];
-        Object.values(consumerChargeData.blocks).forEach(arr => {
-            if (Array.isArray(arr)) {
-                combined = combined.concat(arr);
+        Object.keys(consumerChargeData.blocks).forEach(bName => {
+            if (isTopologySubBlock(bName)) {
+                const arr = consumerChargeData.blocks[bName];
+                if (Array.isArray(arr)) {
+                    combined = combined.concat(arr);
+                }
             }
         });
         // 일사용량 기준 내림차순 정렬
@@ -2722,7 +2730,7 @@ function getAllConsumerList() {
 }
 
 /**
- * 김해시 전체 부과량 요약 통계 계산 (캐싱 지원)
+ * 김해시 전체 부과량 요약 통계 계산 (계통도 소블록 68개 전용, 캐싱 지원)
  */
 function getAllChargeSummary() {
     if (!consumerChargeData) {
@@ -2745,15 +2753,18 @@ function getAllChargeSummary() {
         };
 
         if (consumerChargeData.summary) {
-            Object.values(consumerChargeData.summary).forEach(s => {
-                sum.totalCount += (s.totalCount || 0);
-                sum.totalDailyUsage += (s.totalDailyUsage || 0);
-                sum.largeCount += (s.largeCount || 0);
-                sum.largeDailyUsage += (s.largeDailyUsage || 0);
-                sum.oversizedCount += (s.oversizedCount || 0);
-                sum.undersizedCount += (s.undersizedCount || 0);
-                sum.optimalCount += (s.optimalCount || 0);
-                sum.unfitCount += (s.unfitCount || 0);
+            Object.keys(consumerChargeData.summary).forEach(bName => {
+                if (isTopologySubBlock(bName)) {
+                    const s = consumerChargeData.summary[bName];
+                    sum.totalCount += (s.totalCount || 0);
+                    sum.totalDailyUsage += (s.totalDailyUsage || 0);
+                    sum.largeCount += (s.largeCount || 0);
+                    sum.largeDailyUsage += (s.largeDailyUsage || 0);
+                    sum.oversizedCount += (s.oversizedCount || 0);
+                    sum.undersizedCount += (s.undersizedCount || 0);
+                    sum.optimalCount += (s.optimalCount || 0);
+                    sum.unfitCount += (s.unfitCount || 0);
+                }
             });
             sum.totalDailyUsage = Math.round(sum.totalDailyUsage * 10) / 10;
             sum.largeDailyUsage = Math.round(sum.largeDailyUsage * 10) / 10;
@@ -3449,10 +3460,15 @@ function getYieldBlockSeries(blockName) {
         };
     }
 
-    // 1. 검증된 기준 데이터셋 조회 (0ms 즉각 로드)
+    // 1. 검증된 기준 데이터셋 조회 (0ms 즉각 로드, 정규화 별칭 지원)
     let cachedSeries = null;
-    if (window.VERIFIED_YIELD_DATA && window.VERIFIED_YIELD_DATA[blockName]) {
-        cachedSeries = window.VERIFIED_YIELD_DATA[blockName];
+    const normName = typeof normalizeTopologySubBlockName === 'function' ? normalizeTopologySubBlockName(blockName) : blockName;
+    if (window.VERIFIED_YIELD_DATA) {
+        if (window.VERIFIED_YIELD_DATA[blockName]) {
+            cachedSeries = window.VERIFIED_YIELD_DATA[blockName];
+        } else if (normName && window.VERIFIED_YIELD_DATA[normName]) {
+            cachedSeries = window.VERIFIED_YIELD_DATA[normName];
+        }
     }
 
     // 2. 만약 window.GlobalWaterData(클라우드 배포 데이터)가 로드되어 있으면 실시간 정밀 연산
@@ -3595,51 +3611,10 @@ function computeDynamicYieldSeries(blockName) {
 }
 
 /**
- * 리포트에 표시할 전체 블록 목록 (Water Manager Pro 순서 및 가나다 정렬 100% 매핑)
+ * 리포트에 표시할 전체 블록 목록 (계통도 소블록 68개 전용)
  */
 function getAllYieldReportBlocks() {
-    let blockList = [];
-
-    // 1. 검증 데이터셋의 모든 블록 포함
-    if (window.VERIFIED_YIELD_DATA) {
-        Object.keys(window.VERIFIED_YIELD_DATA).forEach(b => {
-            if (b && !['W', 'w', 'undefined', 'null', 'B1', 'B7', 'B8', '비어있음'].includes(b) && !blockList.includes(b)) {
-                blockList.push(b);
-            }
-        });
-    }
-
-    // 2. 클라우드 전역 객체 블록 포함
-    if (window.GlobalWaterData && Array.isArray(window.GlobalWaterData.blocks)) {
-        window.GlobalWaterData.blocks.forEach(b => {
-            if (b && !['W', 'w', 'undefined', 'null', 'B1', 'B7', 'B8', '비어있음'].includes(b) && !blockList.includes(b)) {
-                blockList.push(b);
-            }
-        });
-    }
-
-    // 3. 기본 주요 블록 리스트 보장
-    const defaultBlocks = [
-        '감노', '구산1', '구산2', '구산3', '구산4',
-        '금음마을', '내덕지구', '내외1', '내외2', '내외3', '내외4', '내외5', '내외6', '내외7', '내외8',
-        '대동1', '대동2', '대동3', '대동4', '대동5', '대동6', '동상1', '동상2',
-        '부원6', '부원7-1', '부원7-2', '부원7-3', '부원8',
-        '북부1', '북부2', '북부3', '북부4', '북부5', '북부6',
-        '불암1', '불암2', '불암3', '불암4', '불암5', '불암6',
-        '삼계1', '삼계2', '삼안1', '삼안2', '삼안3', '삼안4', '삼안5', '삼안6',
-        '생림1', '생림2', '생림3', '장유1', '장유2', '장유3', '장유4', '장유5', '장유6', '장유7', '장유8', '장유9',
-        '주촌1', '주촌2', '주촌3', '주촌4', '주촌5', '주촌6', '주촌7',
-        '진영1', '진영2', '진영3', '진영4', '진영5', '진영6', '진영7',
-        '칠산서부1', '칠산서부2', '칠산서부3',
-        '한림직결1', '한림직결2', '한림직결3', '한림직결4', '한림직결5',
-        '활천1', '활천2', '활천3', '활천4', '활천5'
-    ];
-    defaultBlocks.forEach(b => {
-        if (!blockList.includes(b)) blockList.push(b);
-    });
-
-    // 한국어 가나다순 정렬 (감노, 구산1, 구산2, 구산3, 구산4, 금음마을... 일치)
-    return blockList.sort((a, b) => a.localeCompare(b, 'ko', { numeric: true }));
+    return getTopologySubBlocks();
 }
 
 /**
@@ -3829,7 +3804,7 @@ function renderYieldMatrixTable() {
     // 요약 뱃지 갱신
     const badge = document.getElementById('yieldTableSummaryBadge');
     if (badge) {
-        badge.textContent = `조회: ${visibleMonths.length}개월 / ${blocks.length}개 블록`;
+        badge.textContent = `조회: ${visibleMonths.length}개월 / ${blocks.length}개 소블록`;
     }
 }
 
@@ -4430,7 +4405,7 @@ function renderDashboardTarget(filter = 'all') {
         const latestMonth = Object.keys(chargeMap || {}).sort().pop();
         const currentMonthUsage = latestMonth ? chargeMap[latestMonth] : {};
 
-        Object.keys(targetMap).sort().forEach((bName, idx) => {
+        Object.keys(targetMap).filter(bName => isTopologySubBlock(bName)).sort().forEach((bName, idx) => {
             const item = targetMap[bName];
             const stdVal = item.std || 70.0;
             const targetVal = item.target || 85.0;
