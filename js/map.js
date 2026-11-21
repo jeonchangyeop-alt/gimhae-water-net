@@ -4494,6 +4494,43 @@ const blkFld = (this.labelFields && this.labelFields.blocks) || 'name';
         };
 
         // =========================================================================
+        // 0. [최우선] 김해시 핵심 시설 및 관공서 색인 (GIMHAE_GIS_INDEX)
+        // =========================================================================
+        if (typeof GIMHAE_GIS_INDEX !== 'undefined' && Array.isArray(GIMHAE_GIS_INDEX)) {
+            GIMHAE_GIS_INDEX.forEach(item => {
+                const title = item.title || '';
+                const road = item.road || '';
+                const parcel = item.parcel || '';
+                const bld = item.bldnm || '';
+                const cleanTitle = title.toLowerCase().replace(/\s+/g, '');
+                const cleanRoad = road.toLowerCase().replace(/\s+/g, '');
+                const cleanParcel = parcel.toLowerCase().replace(/\s+/g, '');
+                const cleanBld = bld.toLowerCase().replace(/\s+/g, '');
+
+                const isMatch = cleanTitle.includes(cleanQ) || cleanQ.includes(cleanTitle) ||
+                                cleanRoad.includes(cleanQ) || cleanParcel.includes(cleanQ) ||
+                                cleanBld.includes(cleanQ) ||
+                                (coreQ.length >= 2 && cleanTitle.includes(coreQ));
+
+                if (isMatch) {
+                    addCandidate({
+                        ...item,
+                        title: item.title,
+                        name: item.title,
+                        category: item.category || '상수도시설',
+                        road: item.road,
+                        parcel: item.parcel,
+                        lat: item.lat,
+                        lng: item.lng,
+                        block: item.block,
+                        facilityType: item.category === '가압장' ? 'BOOSTER' : (item.category === '배수지' || item.category === '정수장' ? 'RESERVOIR' : 'FACILITY'),
+                        source: '김해 GIS 핵심색인'
+                    }, 'FACILITY', 2300, item.title);
+                }
+            });
+        }
+
+        // =========================================================================
         // 1. [최우선] 관망 블록명 검색 (131개 유수율 관리 블록 + 103개 GIS 블록 통합)
         // =========================================================================
         const blockMap = new Map();

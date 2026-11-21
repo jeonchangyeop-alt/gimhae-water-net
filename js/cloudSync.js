@@ -93,6 +93,18 @@ function runWithNetFlowCache(fn) {
  * @param {string} mode - 'net' (순유량), 'source' (총유입량 - 하위 차감 제외)
  */
 function getNetFlow(dateKey, blockName, field = 'totalSupply', includeAll = false, mode = 'net') {
+    if (blockName === '대동5+6') {
+        const v5 = getNetFlow(dateKey, '대동5', field, includeAll, mode);
+        const v6 = getNetFlow(dateKey, '대동6', field, includeAll, mode);
+        if (typeof v5 === 'number' || typeof v6 === 'number') {
+            return (typeof v5 === 'number' ? v5 : 0) + (typeof v6 === 'number' ? v6 : 0);
+        }
+        return undefined;
+    }
+    if (blockName === '진례(직결)') return getNetFlow(dateKey, '진례직결', field, includeAll, mode);
+    if (blockName === '명동산단(중블록)') return getNetFlow(dateKey, '명동산단', field, includeAll, mode);
+    if (/^한림([1-5])$/.test(blockName)) return getNetFlow(dateKey, '한림직결' + RegExp.$1, field, includeAll, mode);
+
     const cacheKey = activeNetFlowCache ? `${dateKey}|${blockName}|${field}|${includeAll}|${mode}` : null;
     if (cacheKey && activeNetFlowCache.has(cacheKey)) {
         return activeNetFlowCache.get(cacheKey);
@@ -151,6 +163,15 @@ function getNetFlow(dateKey, blockName, field = 'totalSupply', includeAll = fals
  * @returns {object} { usage, avg } 합산된 부과량
  */
 function getEffectiveCharge(monthKey, blockName) {
+    if (blockName === '대동5+6') {
+        const r5 = getEffectiveCharge(monthKey, '대동5');
+        const r6 = getEffectiveCharge(monthKey, '대동6');
+        return { usage: (r5?.usage || 0) + (r6?.usage || 0), avg: (r5?.avg || 0) + (r6?.avg || 0) };
+    }
+    if (blockName === '진례(직결)') return getEffectiveCharge(monthKey, '진례직결');
+    if (blockName === '명동산단(중블록)') return getEffectiveCharge(monthKey, '명동산단');
+    if (/^한림([1-5])$/.test(blockName)) return getEffectiveCharge(monthKey, '한림직결' + RegExp.$1);
+
     const chargeData = window.GlobalWaterData?.chargeData || {};
     const chargeDeps = window.GlobalWaterData?.chargeDeps || {};
 

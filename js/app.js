@@ -415,106 +415,116 @@ function applyOverviewFilter(filter) {
 }
 
 /**
- * 계통도(KIMHAE_TOPOLOGY_DATA) 소블록(SUB) 68개 표준 목록 및 정규화 유틸
+ * 김해시 92개 유수율 관리 블록 (목표유수율 파일 기준 & 권역별 정렬 100% 매핑)
  */
-const DEFAULT_TOPOLOGY_SUB_BLOCKS = [
+const YIELD_BLOCKS_92 = [
+    // --- 명동권역 (35개) ---
+    '진영1', '진영2', '진영3', '진영4', '진영5', '진영6', '진영7',
+    '진례(직결)',
+    '한림1', '한림2', '한림3', '한림4', '한림5',
+    '병동농공', '명동산단(중블록)', '금음마을', '망천직결',
+    '주촌1', '주촌2', '주촌3', '주촌4', '주촌5', '주촌6', '주촌7',
+    '장유1', '장유2', '장유3', '장유4', '장유5', '장유6', '장유7', '장유8', '장유9',
+    '율하2',
+    '테크노산단',
+
+    // --- 삼계권역 (48개) ---
+    '생림1', '생림2', '생림3',
     '구산1', '구산2', '구산3', '구산4',
     '내외1', '내외2', '내외3', '내외4', '내외5', '내외6', '내외7', '내외8',
-    '대동1', '대동2', '대동3', '대동4', '대동5', '대동6',
     '동상1', '동상2',
-    '병동농공',
     '부원6', '부원7-1', '부원7-2', '부원7-3', '부원8',
     '북부1', '북부2', '북부3', '북부4', '북부5', '북부6',
-    '상동1', '상동2', '상동3',
-    '생림1', '생림2', '생림3',
-    '율하2',
-    '장유1', '장유2', '장유3', '장유4', '장유5', '장유6', '장유7', '장유8', '장유9',
-    '진례직결',
-    '진영1', '진영2', '진영3', '진영4', '진영5', '진영6', '진영7',
+    '불암1', '불암2', '불암3', '불암4', '불암5', '불암6',
+    '삼안1', '삼안2', '삼안3', '삼안4', '삼안5', '삼안6',
     '칠산서부1', '칠산서부2', '칠산서부3',
-    '테크노산단',
-    '한림직결1', '한림직결2', '한림직결3', '한림직결4', '한림직결5',
-    '활천1', '활천2', '활천3'
+    '활천1', '활천2', '활천3', '활천4', '활천5',
+
+    // --- 덕산권역 (9개) ---
+    '대동1', '대동2', '대동3', '대동4', '대동5+6', '대동6',
+    '상동1', '상동2', '상동3'
 ];
 
-let _cachedTopologySubBlocks = null;
-let _cachedTopologySubBlockSet = null;
+/**
+ * 김해시 94개 공급량 분석 블록 (92개 블록 + 상동2 아래 대감1, 대감2 추가)
+ */
+const SUPPLY_BLOCKS_94 = [
+    // --- 명동권역 (35개) ---
+    '진영1', '진영2', '진영3', '진영4', '진영5', '진영6', '진영7',
+    '진례(직결)',
+    '한림1', '한림2', '한림3', '한림4', '한림5',
+    '병동농공', '명동산단(중블록)', '금음마을', '망천직결',
+    '주촌1', '주촌2', '주촌3', '주촌4', '주촌5', '주촌6', '주촌7',
+    '장유1', '장유2', '장유3', '장유4', '장유5', '장유6', '장유7', '장유8', '장유9',
+    '율하2',
+    '테크노산단',
+
+    // --- 삼계권역 (48개) ---
+    '생림1', '생림2', '생림3',
+    '구산1', '구산2', '구산3', '구산4',
+    '내외1', '내외2', '내외3', '내외4', '내외5', '내외6', '내외7', '내외8',
+    '동상1', '동상2',
+    '부원6', '부원7-1', '부원7-2', '부원7-3', '부원8',
+    '북부1', '북부2', '북부3', '북부4', '북부5', '북부6',
+    '불암1', '불암2', '불암3', '불암4', '불암5', '불암6',
+    '삼안1', '삼안2', '삼안3', '삼안4', '삼안5', '삼안6',
+    '칠산서부1', '칠산서부2', '칠산서부3',
+    '활천1', '활천2', '활천3', '활천4', '활천5',
+
+    // --- 덕산권역 (11개) ---
+    '대동1', '대동2', '대동3', '대동4', '대동5+6', '대동6',
+    '상동1', '상동2',
+    '대감1', '대감2', // 상동2 아래 소소블록
+    '상동3'
+];
+
+window.YIELD_BLOCKS_92 = YIELD_BLOCKS_92;
+window.SUPPLY_BLOCKS_94 = SUPPLY_BLOCKS_94;
+
+function getBlockRegion(bName) {
+    if (!bName) return '삼계권역';
+    const clean = String(bName).trim();
+    if (/대동|상동|대감/.test(clean)) return '덕산권역';
+    if (/진영|진례|한림|장유|주촌|율하|망천|병동|명동|테크노|이지산단|골든루트|금음/.test(clean)) return '명동권역';
+    return '삼계권역';
+}
+window.getBlockRegion = getBlockRegion;
 
 function normalizeTopologySubBlockName(rawName) {
     if (!rawName) return '';
     let name = String(rawName).trim();
-    if (name === '진례직결(소)') return '진례직결';
+    if (name === '진례직결(소)' || name === '진례직결') return '진례(직결)';
     if (name === '병동농공(소)') return '병동농공';
-    if (name === '한림5(소)' || name === '한림5') return '한림직결5';
-    if (/^한림([1-5])$/.test(name)) {
-        return '한림직결' + RegExp.$1;
+    if (name === '금음마을(중블록)') return '금음마을';
+    if (name === '망천직결(중블록)') return '망천직결';
+    if (name === '명동산단') return '명동산단(중블록)';
+    if (name === '한림5(소)') return '한림5';
+    if (/^한림직결([1-5])$/.test(name)) {
+        return '한림' + RegExp.$1;
     }
     return name;
 }
 
 function getTopologySubBlocks() {
-    if (_cachedTopologySubBlocks) return _cachedTopologySubBlocks;
-
-    const blockSet = new Set();
-    const regions = ['myeongdong', 'samgye', 'deoksan'];
-
-    // 1. window.KIMHAE_TOPOLOGY_DATA 및 localStorage 동적 추출
-    if (typeof window !== 'undefined' && window.KIMHAE_TOPOLOGY_DATA) {
-        regions.forEach(rKey => {
-            let rData = null;
-            if (typeof localStorage !== 'undefined') {
-                const saved = localStorage.getItem('KIMHAE_TOPOLOGY_CUSTOM_' + rKey);
-                if (saved) {
-                    try { rData = JSON.parse(saved); } catch (e) {}
-                }
-            }
-            if (!rData && window.KIMHAE_TOPOLOGY_DATA[rKey]) {
-                rData = window.KIMHAE_TOPOLOGY_DATA[rKey];
-            }
-            if (rData && Array.isArray(rData.nodes)) {
-                rData.nodes.forEach(n => {
-                    if (n && n.type === 'SUB' && n.label) {
-                        const norm = normalizeTopologySubBlockName(n.label);
-                        if (norm) blockSet.add(norm);
-                    }
-                });
-            }
-        });
-    }
-
-    // 2. 기본 68개 소블록 보장
-    DEFAULT_TOPOLOGY_SUB_BLOCKS.forEach(b => blockSet.add(b));
-
-    _cachedTopologySubBlocks = Array.from(blockSet).sort((a, b) => a.localeCompare(b, 'ko', { numeric: true }));
-    _cachedTopologySubBlockSet = new Set(_cachedTopologySubBlocks);
-    return _cachedTopologySubBlocks;
+    return YIELD_BLOCKS_92.slice();
 }
 
 function isTopologySubBlock(bName) {
     if (!bName) return false;
-    getTopologySubBlocks();
     const norm = normalizeTopologySubBlockName(bName);
-    if (_cachedTopologySubBlockSet.has(norm) || _cachedTopologySubBlockSet.has(bName)) {
-        return true;
-    }
-    const bare = bName.replace(/\(소\)/g, '').trim();
-    if (_cachedTopologySubBlockSet.has(bare)) return true;
-    return false;
+    return YIELD_BLOCKS_92.includes(norm) || YIELD_BLOCKS_92.includes(bName);
 }
 
 window.getTopologySubBlocks = getTopologySubBlocks;
 window.isTopologySubBlock = isTopologySubBlock;
 window.normalizeTopologySubBlockName = normalizeTopologySubBlockName;
-window.invalidateTopologySubBlocksCache = function() {
-    _cachedTopologySubBlocks = null;
-    _cachedTopologySubBlockSet = null;
-};
+window.invalidateTopologySubBlocksCache = function() {};
 
 /**
- * 김해시 유수율 분석 소블록 목록 도출 유틸 (계통도 소블록 68개 전용)
+ * 김해시 유수율 분석 소블록 목록 도출 유틸 (0. 대시보드 92개 블록 전용)
  */
 function getOverviewAllBlocks() {
-    return getTopologySubBlocks();
+    return YIELD_BLOCKS_92.slice();
 }
 
 /**
@@ -1327,6 +1337,8 @@ function exportOverviewExcel() {
 let currentSelectedSupplyBlock = '구산1';
 let supplyAnalyticsChartInstance = null;
 let currentActiveSupplyDates = [];
+let currentSupplyRegionFilter = 'all'; // 'all' | '명동권역' | '삼계권역' | '덕산권역'
+let currentYieldRegionFilter = 'all';  // 'all' | '명동권역' | '삼계권역' | '덕산권역'
 
 /**
  * 이상치 정제 유틸리티 (getCleanData)
@@ -1635,8 +1647,13 @@ function renderDashboardSupply() {
     if (activeDates.length === 0) activeDates = allDates.slice(-30);
     currentActiveSupplyDates = activeDates;
 
-    // 블록 리스트 도출: 계통도 소블록(SUB) 68개 전용 도출
-    let blocks = getTopologySubBlocks().slice();
+    // 블록 리스트 도출: 94개 공급량 블록 (92개 블록 + 덕산권역 상동2 아래 대감1, 대감2)
+    let blocks = SUPPLY_BLOCKS_94.slice();
+
+    // 권역 필터
+    if (currentSupplyRegionFilter && currentSupplyRegionFilter !== 'all') {
+        blocks = blocks.filter(b => getBlockRegion(b) === currentSupplyRegionFilter);
+    }
 
     // 검색창 키워드 필터
     const searchInput = document.getElementById('supplyBlockSearchInput');
@@ -1663,7 +1680,7 @@ function renderDashboardSupply() {
     // 카운트 뱃지 갱신
     const countBadge = document.getElementById('supplyTableCountBadge');
     if (countBadge) {
-        countBadge.textContent = `${activeDates.length}일분 / ${blocks.length}개 소블록`;
+        countBadge.textContent = `${activeDates.length}일분 / ${blocks.length}개 블록`;
     }
 
     // 현재 선택 블록 검증
@@ -2443,13 +2460,12 @@ async function renderDashboardCharge() {
         currentChargeBlock = 'ALL';
     }
 
-    // 3. 블록 드롭다운 옵션 채우기 (최상단에 '전체' 추가, 계통도 소블록 68개 필터)
+    // 3. 블록 드롭다운 옵션 채우기 (최상단에 '전체' 추가, 부과량 원본 자료 100% 표출)
     const blockSelect = document.getElementById('chargeBlockSelect');
     if (blockSelect && blockSelect.options.length <= 2) {
         const sortedBlocks = Object.keys(data.blocks)
-            .filter(b => isTopologySubBlock(b))
             .sort((a, b) => a.localeCompare(b, 'ko', { numeric: true }));
-        blockSelect.innerHTML = `<option value="ALL">전체 (소블록 ${sortedBlocks.length}개)</option>` + sortedBlocks.map(b => `<option value="${b}">${b}</option>`).join('');
+        blockSelect.innerHTML = `<option value="ALL">전체 (총 ${sortedBlocks.length}개 블록)</option>` + sortedBlocks.map(b => `<option value="${b}">${b}</option>`).join('');
     }
     if (blockSelect) blockSelect.value = currentChargeBlock;
 
@@ -3611,10 +3627,14 @@ function computeDynamicYieldSeries(blockName) {
 }
 
 /**
- * 리포트에 표시할 전체 블록 목록 (계통도 소블록 68개 전용)
+ * 리포트에 표시할 전체 블록 목록 (92개 소블록 목표유수율 기준)
  */
 function getAllYieldReportBlocks() {
-    return getTopologySubBlocks();
+    let blocks = YIELD_BLOCKS_92.slice();
+    if (currentYieldRegionFilter && currentYieldRegionFilter !== 'all') {
+        blocks = blocks.filter(b => getBlockRegion(b) === currentYieldRegionFilter);
+    }
+    return blocks;
 }
 
 /**
@@ -3834,14 +3854,14 @@ function renderYieldRightPanel(blockName) {
     const blockSelect = document.getElementById('selectYieldTargetBlock');
     if (blockSelect) {
         if (blockSelect.options.length !== blocks.length) {
-            blockSelect.innerHTML = blocks.map(b => `<option value="${b}">${b}</option>`).join('');
+            blockSelect.innerHTML = blocks.map(b => `<option value="${b}">[${getBlockRegion(b)}] ${b}</option>`).join('');
         }
         blockSelect.value = blockName;
     }
 
     const badge = document.getElementById('yieldCurrentBlockBadge');
     if (badge) {
-        badge.textContent = `${blockName} (소블록)`;
+        badge.textContent = `${blockName} [${getBlockRegion(blockName)}]`;
     }
 
     const series = getYieldBlockSeries(blockName);
@@ -5851,6 +5871,32 @@ function initUIEvents() {
             renderDashboardSupply();
         });
     }
+
+    // 공급량 권역 필터 필 바인딩
+    const supplyPills = document.querySelectorAll('#supplyRegionFilterGroup .target-filter-pill');
+    supplyPills.forEach(pill => {
+        pill.addEventListener('click', () => {
+            supplyPills.forEach(p => p.classList.remove('active'));
+            pill.classList.add('active');
+            currentSupplyRegionFilter = pill.dataset.region || 'all';
+            renderDashboardSupply();
+        });
+    });
+
+    // 유수율 리포트 권역 필터 필 바인딩
+    const yieldPills = document.querySelectorAll('#yieldRegionFilterGroup .target-filter-pill');
+    yieldPills.forEach(pill => {
+        pill.addEventListener('click', () => {
+            yieldPills.forEach(p => p.classList.remove('active'));
+            pill.classList.add('active');
+            currentYieldRegionFilter = pill.dataset.region || 'all';
+            renderYieldMatrixTable();
+            if (typeof renderYieldRightPanel === 'function') {
+                const curBlock = currentYieldSelectedBlock || '구산1';
+                renderYieldRightPanel(curBlock);
+            }
+        });
+    });
 
     const chkRepairOnly = document.getElementById('chkFilterRepairOnly');
     if (chkRepairOnly) {

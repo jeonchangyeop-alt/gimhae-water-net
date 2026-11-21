@@ -13,10 +13,10 @@
 
     // 현재 모듈 내부 상태
     let currentTargetMonthIdx = 17; // 26년 9월 (기본 최신)
-    let currentSystemFilter = 'all'; // 'all' | '삼계계통' | '덕산계통' | '명동계통'
+    let currentSystemFilter = 'all'; // 'all' | '삼계권역' | '덕산권역' | '명동권역'
     let currentStatusFilter = 'all'; // 'all' | 'achieved' | 'unachieved'
     let currentSearchKeyword = '';
-    let currentActiveSidebarSys = '삼계계통';
+    let currentActiveSidebarSys = '삼계권역';
     let currentSelectedTargetBlock = null;
 
     /**
@@ -24,11 +24,11 @@
      * 첨부 PDF 도면 및 topologyData.js 기준 100% 일치
      */
     function getBlockSystemName(blockName) {
-        if (!blockName) return '삼계계통';
+        if (!blockName) return '삼계권역';
         const clean = String(blockName).trim();
-        if (/대동|상동|불암/.test(clean)) return '덕산계통';
-        if (/진영|진례|한림|장유|주촌|율하|망천|병동|명동|테크노|이지산단|골든루트/.test(clean)) return '명동계통';
-        return '삼계계통';
+        if (/대동|상동|대감/.test(clean)) return '덕산권역';
+        if (/진영|진례|한림|장유|주촌|율하|망천|병동|명동|테크노|이지산단|골든루트|금음/.test(clean)) return '명동권역';
+        return '삼계권역';
     }
 
     /**
@@ -118,19 +118,23 @@
     function calculateTargetMetrics(monthIdx) {
         const standards = window.TARGET_YIELD_STANDARDS || {};
         const verifiedData = window.VERIFIED_YIELD_DATA || {};
-        const blockKeys = Object.keys(standards).sort();
+        const blockKeys = typeof window.YIELD_BLOCKS_92 !== 'undefined' 
+            ? window.YIELD_BLOCKS_92 
+            : Object.keys(standards);
 
         const results = [];
 
         blockKeys.forEach(bName => {
-            const stdItem = standards[bName];
+            const stdItem = standards[bName] || {};
             const stdYield = stdItem.std;
             const targetYield = stdItem.target;
             const system = getBlockSystemName(bName);
 
-            // verifiedYieldData 매핑 (한림5는 한림직결5와 호환)
+            // verifiedYieldData 매핑
             let vData = verifiedData[bName];
             if (!vData && bName === '한림5') vData = verifiedData['한림직결5'];
+            if (!vData && bName === '진례(직결)') vData = verifiedData['진례직결'];
+            if (!vData && bName === '명동산단(중블록)') vData = verifiedData['명동산단'];
 
             let currSupply = 0, currBilled = 0, currYield = 0, currMnf = 0, recentMnf = 0;
 
@@ -155,19 +159,18 @@
                 }
             }
 
-            // [핵심 엔진 공식] 목표 절감량 및 목표 야간최소유량 산출 (Water Manager Pro 동일)
-            // reduction = (targetRatio * currSupply - currBilled) / targetRatio / 24
-            const targetRatio = targetYield * 0.01;
+            // [핵심 엔진 공식] 목표 절감량 및 목표 야간최소유량 산출
+            const targetRatio = typeof targetYield === 'number' ? targetYield * 0.01 : 0;
             let reduction = 0;
             let targetMnf = currMnf;
 
             if (currSupply > 0 && targetRatio > 0) {
                 reduction = (targetRatio * currSupply - currBilled) / targetRatio / 24.0;
-                if (reduction < 0) reduction = 0; // 이미 달성한 경우 절감량 0
+                if (reduction < 0) reduction = 0;
                 targetMnf = Math.max(0, currMnf - reduction);
             }
 
-            const isAchieved = (currYield >= targetYield && currYield > 0);
+            const isAchieved = (typeof targetYield === 'number' && currYield >= targetYield && currYield > 0);
 
             results.push({
                 blockName: bName,
@@ -291,8 +294,8 @@
 
             // 계통 뱃지 색상
             let sysBadgeClass = 'badge-sys-samgye';
-            if (item.system === '덕산계통') sysBadgeClass = 'badge-sys-deoksan';
-            if (item.system === '명동계통') sysBadgeClass = 'badge-sys-myeongdong';
+            if (item.system.includes('덕산')) sysBadgeClass = 'badge-sys-deoksan';
+            if (item.system.includes('명동')) sysBadgeClass = 'badge-sys-myeongdong';
 
             // 현재 유수율 색상
             const yieldColor = item.currYield === 0 ? '#94A3B8' : (item.isAchieved ? '#10B981' : '#F59E0B');
@@ -302,13 +305,16 @@
                     ? `<span class="target-status-badge badge-achieved"><i class="fa-solid fa-check"></i> 달성</span>`
                     : `<span class="target-status-badge badge-unachieved"><i class="fa-solid fa-triangle-exclamation"></i> 미달성</span>`);
 
+            const stdStr = typeof item.stdYield === 'number' ? (item.stdYield > 0 ? item.stdYield.toFixed(1) + '%' : '-') : (item.stdYield || '-');
+            const targetStr = typeof item.targetYield === 'number' ? (item.targetYield > 0 ? item.targetYield.toFixed(1) + '%' : '-') : (item.targetYield || '-');
+
             tr.innerHTML = `
                 <td style="text-align:center; color:#64748B; font-weight:600;">${idx + 1}</td>
                 <td class="col-sticky-block"><strong>${item.blockName}</strong></td>
-                <td style="text-align:center;"><span class="target-sys-pill ${sysBadgeClass}">${item.system.replace('계통', '')}</span></td>
-                <td style="text-align:right;">${item.stdYield > 0 ? item.stdYield.toFixed(1) + '%' : '-'}</td>
+                <td style="text-align:center;"><span class="target-sys-pill ${sysBadgeClass}">${item.system.replace('계통', '').replace('권역', '')}</span></td>
+                <td style="text-align:right;">${stdStr}</td>
                 <td style="text-align:right; font-weight:800; color:${yieldColor};">${item.currYield > 0 ? item.currYield.toFixed(1) + '%' : '-'}</td>
-                <td style="text-align:right; font-weight:700; color:#2563EB;">${item.targetYield.toFixed(1)}%</td>
+                <td style="text-align:right; font-weight:700; color:#2563EB;">${targetStr}</td>
                 <td style="text-align:right; color:#334155;">${item.currSupply > 0 ? item.currSupply.toLocaleString() : '-'}</td>
                 <td style="text-align:right; color:#334155;">${item.currBilled > 0 ? item.currBilled.toLocaleString() : '-'}</td>
                 <td style="text-align:right; color:#64748B;">${item.currMnf > 0 ? item.currMnf.toFixed(1) : '-'}</td>

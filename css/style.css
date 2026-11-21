@@ -10410,6 +10410,7 @@ body.theme-navy .glc-label-field-select {
 
     .vsm-input-group {
         flex: 1 1 auto !important;
+        min-width: 0 !important;
         width: auto !important;
         height: 44px !important;
         background: #F8FAFC !important;
@@ -10440,6 +10441,7 @@ body.theme-navy .glc-label-field-select {
         color: #0F172A !important;
         height: 100% !important;
         width: 100% !important;
+        min-width: 0 !important;
     }
 
     .vsm-input::placeholder {
