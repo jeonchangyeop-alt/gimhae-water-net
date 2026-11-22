@@ -1084,14 +1084,16 @@ function initGisCanvasLayerClass() {
                             pathSp.lineTo(pt.x, pt.y);
                         }
                     }
-                    const spLineWidth = Math.max(1.8, baseW * (zoom >= 17 ? 2.0 : 1.4));
-                    // 1차: 어두운 외곽선 (위성배경 대비 선명도 부각)
-                    ctx.beginPath();
-                    ctx.strokeStyle = 'rgba(0, 30, 50, 0.7)';
-                    ctx.lineWidth = spLineWidth + 1.2;
-                    ctx.lineCap = 'round';
-                    ctx.lineJoin = 'round';
-                    ctx.stroke(pathSp);
+                    const spLineWidth = Math.max(0.3, baseW * (zoom >= 18 ? 1.15 : 1.0));
+                    // 1차: 선이 굵을 때만 보조 외곽선 (가장 얇을 때는 과도한 굵어짐 방지)
+                    if (spLineWidth >= 1.2) {
+                        ctx.beginPath();
+                        ctx.strokeStyle = 'rgba(0, 30, 50, 0.65)';
+                        ctx.lineWidth = spLineWidth + 0.8;
+                        ctx.lineCap = 'round';
+                        ctx.lineJoin = 'round';
+                        ctx.stroke(pathSp);
+                    }
 
                     // 2차: QField 네온 사이언 본체 선
                     ctx.beginPath();
@@ -1103,11 +1105,13 @@ function initGisCanvasLayerClass() {
 
                     // 1-2. 급수관로 관경 라벨 표출 (사용자 요청: 라벨 ON 상태 & zoom >= 17)
                     if (mm.labelVisibility && mm.labelVisibility.servicePipes && zoom >= 17) {
-                        const spLabelSize = (mm.labelSizes && mm.labelSizes.servicePipes) || 10;
+                        const spLabelSize = (mm.labelSizes && mm.labelSizes.servicePipes) || 9;
                         ctx.save();
-                        ctx.font = `800 ${spLabelSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+                        ctx.font = `bold ${spLabelSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
                         ctx.textAlign = 'center';
-                        ctx.textBaseline = 'middle';
+                        ctx.textBaseline = 'bottom';
+                        const spOffset = (spLineWidth / 2) + 2.5;
+
                         for (let i = 0; i < len; i++) {
                             const sp = spList[i];
                             const dia = sp.dia || sp.d || 20;
@@ -1134,12 +1138,12 @@ function initGisCanvasLayerClass() {
                             ctx.rotate(angle);
                             ctx.lineJoin = 'round';
                             ctx.miterLimit = 2;
-                            // QField 스타일: 고대비 블랙 외곽선 버퍼 + 순백색 본체 텍스트
-                            ctx.lineWidth = 3.2;
+                            // 관 위쪽으로 띄워 표출
+                            ctx.lineWidth = 2.6;
                             ctx.strokeStyle = '#000000';
-                            ctx.strokeText(labelText, 0, 0);
+                            ctx.strokeText(labelText, 0, -spOffset);
                             ctx.fillStyle = '#FFFFFF';
-                            ctx.fillText(labelText, 0, 0);
+                            ctx.fillText(labelText, 0, -spOffset);
                             ctx.restore();
                         }
                         ctx.restore();
@@ -1153,7 +1157,7 @@ function initGisCanvasLayerClass() {
                 const len = lm2List.length;
                 if (len > 0) {
                     const baseW = (mm.symbolSizes && mm.symbolSizes.pipes && mm.symbolSizes.pipes.pipesLm2) || 1.1;
-                    const lm2LineWidth = Math.max(2.4, baseW * (zoom >= 17 ? 2.8 : (zoom >= 15 ? 2.2 : 1.6)));
+                    const lm2LineWidth = Math.max(0.4, baseW * (zoom >= 18 ? 1.2 : 1.0));
                     const pathLm2 = new Path2D();
                     for (let i = 0; i < len; i++) {
                         const coords = lm2List[i].coordinates || lm2List[i].c;
@@ -1165,13 +1169,15 @@ function initGisCanvasLayerClass() {
                             pathLm2.lineTo(pt.x, pt.y);
                         }
                     }
-                    // 1차: 어두운 외곽선 (casing: 위성사진 대비 극대화)
-                    ctx.beginPath();
-                    ctx.strokeStyle = 'rgba(0, 15, 60, 0.75)';
-                    ctx.lineWidth = lm2LineWidth + 1.2;
-                    ctx.lineCap = 'round';
-                    ctx.lineJoin = 'round';
-                    ctx.stroke(pathLm2);
+                    // 1차: 선이 굵을 때만 보조 외곽선
+                    if (lm2LineWidth >= 1.2) {
+                        ctx.beginPath();
+                        ctx.strokeStyle = 'rgba(0, 15, 60, 0.65)';
+                        ctx.lineWidth = lm2LineWidth + 0.8;
+                        ctx.lineCap = 'round';
+                        ctx.lineJoin = 'round';
+                        ctx.stroke(pathLm2);
+                    }
 
                     // 2차: QField 비비드 블루 본체 선
                     ctx.beginPath();
@@ -1184,11 +1190,13 @@ function initGisCanvasLayerClass() {
 
                 // 2-2. 상수관로 (LM2) 관로 라벨 표출 (라벨 ON & zoom >= 15)
                 if (mm.labelVisibility && mm.labelVisibility.pipesLm2 && zoom >= 15) {
-                    const lm2LabelSize = (mm.labelSizes && mm.labelSizes.pipesLm2) || 12;
+                    const lm2LabelSize = (mm.labelSizes && mm.labelSizes.pipesLm2) || 10;
                     ctx.save();
-                    ctx.font = `800 ${lm2LabelSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+                    ctx.font = `bold ${lm2LabelSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
                     ctx.textAlign = 'center';
-                    ctx.textBaseline = 'middle';
+                    ctx.textBaseline = 'bottom';
+                    const lm2Offset = (lm2LineWidth / 2) + 2.8;
+
                     const lm2Fld = (mm.labelFields && mm.labelFields.pipesLm2) || 'pip_lbl';
                     for (let i = 0; i < len; i++) {
                         const p = lm2List[i];
@@ -1220,12 +1228,12 @@ function initGisCanvasLayerClass() {
                         ctx.rotate(angle);
                         ctx.lineJoin = 'round';
                         ctx.miterLimit = 2;
-                        // QField 스타일: 굵은 검정 외곽선 + 순백색 본체 텍스트
-                        ctx.lineWidth = 3.6;
+                        // 관 위쪽으로 띄워 표출
+                        ctx.lineWidth = 2.8;
                         ctx.strokeStyle = '#000000';
-                        ctx.strokeText(labelText, 0, 0);
+                        ctx.strokeText(labelText, 0, -lm2Offset);
                         ctx.fillStyle = '#FFFFFF';
-                        ctx.fillText(labelText, 0, 0);
+                        ctx.fillText(labelText, 0, -lm2Offset);
                         ctx.restore();
                     }
                     ctx.restore();
@@ -1240,10 +1248,10 @@ function initGisCanvasLayerClass() {
                 if (len > 0) {
                     const subVis = (mm.subLayerVisibility && mm.subLayerVisibility.pipesLm) ? mm.subLayerVisibility.pipesLm : { d250: true, d500: true, dover: true };
                     const sizes = (mm.symbolSizes && mm.symbolSizes.pipes) ? mm.symbolSizes.pipes : {};
-                    const w250 = sizes.pipesLm_d250 || 1.1;
-                    const w500 = sizes.pipesLm_d500 || 1.6;
-                    const wOver = sizes.pipesLm_dover || 2.2;
-                    const zoomScale = zoom >= 19 ? 1.6 : (zoom >= 17 ? 1.35 : (zoom >= 15 ? 1.15 : (zoom >= 13 ? 1.0 : 0.8)));
+                    const w250 = sizes.pipesLm_d250 !== undefined ? sizes.pipesLm_d250 : 0.8;
+                    const w500 = sizes.pipesLm_d500 !== undefined ? sizes.pipesLm_d500 : 1.2;
+                    const wOver = sizes.pipesLm_dover !== undefined ? sizes.pipesLm_dover : 1.6;
+                    const zoomScale = zoom >= 18 ? 1.2 : 1.0;
 
                     // LOD (레벨 오브 디테일): 원거리(zoom < 14)에서는 대구경 송·배수관(D250 초과) 위주로 표출하여 렉 완전 차단!
                     const show250 = subVis.d250 !== false && zoom >= 14;
@@ -1283,17 +1291,20 @@ function initGisCanvasLayerClass() {
                         }
                     }
 
+                    const wOverActual = Math.max(1.0, wOver * zoomScale);
+                    const w500Actual = Math.max(0.8, w500 * zoomScale);
+                    const w250Actual = Math.max(0.4, w250 * zoomScale);
+
                     // 3-1. 500mm 초과 (빨간색 점선)
                     if (hasOver) {
                         ctx.save();
                         ctx.beginPath();
                         ctx.strokeStyle = (mm.pipeColors && mm.pipeColors.dover) || '#DC2626';
-                        const wOverActual = Math.max(2.8, wOver * zoomScale * 1.5);
                         ctx.lineWidth = wOverActual;
                         ctx.lineCap = 'round';
                         ctx.lineJoin = 'round';
-                        const dashSize = Math.max(7, Math.round(wOverActual * 1.8));
-                        const gapSize = Math.max(5, Math.round(wOverActual * 1.1));
+                        const dashSize = Math.max(6, Math.round(wOverActual * 2.0));
+                        const gapSize = Math.max(4, Math.round(wOverActual * 1.2));
                         ctx.setLineDash([dashSize, gapSize]);
                         ctx.stroke(pathOver);
                         ctx.restore();
@@ -1301,14 +1312,15 @@ function initGisCanvasLayerClass() {
 
                     // 3-2. 250mm 초과 ~ 500mm 이하 (빨간색 실선)
                     if (has500) {
-                        const w500Actual = Math.max(2.5, w500 * zoomScale * 1.5);
-                        ctx.beginPath();
-                        ctx.strokeStyle = 'rgba(60, 0, 0, 0.75)';
-                        ctx.lineWidth = w500Actual + 1.2;
-                        ctx.lineCap = 'round';
-                        ctx.lineJoin = 'round';
-                        ctx.setLineDash([]);
-                        ctx.stroke(path500);
+                        if (w500Actual >= 1.2) {
+                            ctx.beginPath();
+                            ctx.strokeStyle = 'rgba(60, 0, 0, 0.65)';
+                            ctx.lineWidth = w500Actual + 0.8;
+                            ctx.lineCap = 'round';
+                            ctx.lineJoin = 'round';
+                            ctx.setLineDash([]);
+                            ctx.stroke(path500);
+                        }
 
                         ctx.beginPath();
                         ctx.strokeStyle = (mm.pipeColors && mm.pipeColors.d500) || '#DC2626';
@@ -1320,15 +1332,15 @@ function initGisCanvasLayerClass() {
 
                     // 3-3. 0 ~ 250mm 이하 (QField 비비드 파란색 실선)
                     if (has250) {
-                        const w250Actual = Math.max(2.4, w250 * zoomScale * 1.5);
-                        // 1차 어두운 외곽선 (casing: 선명한 대비 효과)
-                        ctx.beginPath();
-                        ctx.strokeStyle = 'rgba(0, 15, 60, 0.75)';
-                        ctx.lineWidth = w250Actual + 1.2;
-                        ctx.lineCap = 'round';
-                        ctx.lineJoin = 'round';
-                        ctx.setLineDash([]);
-                        ctx.stroke(path250);
+                        if (w250Actual >= 1.2) {
+                            ctx.beginPath();
+                            ctx.strokeStyle = 'rgba(0, 15, 60, 0.65)';
+                            ctx.lineWidth = w250Actual + 0.8;
+                            ctx.lineCap = 'round';
+                            ctx.lineJoin = 'round';
+                            ctx.setLineDash([]);
+                            ctx.stroke(path250);
+                        }
 
                         // 2차 비비드 블루 본체 선
                         ctx.beginPath();
@@ -1341,11 +1353,11 @@ function initGisCanvasLayerClass() {
 
                     // 3-4. 상수관로 (LM) 관경 라벨 표출 (사용자 요청: 라벨 ON 상태 & zoom >= 15)
                     if (mm.labelVisibility && mm.labelVisibility.pipesLm && zoom >= 15) {
-                        const pipeLabelSize = (mm.labelSizes && mm.labelSizes.pipesLm) || 12;
+                        const pipeLabelSize = (mm.labelSizes && mm.labelSizes.pipesLm) || 10;
                         ctx.save();
-                        ctx.font = `800 ${pipeLabelSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+                        ctx.font = `bold ${pipeLabelSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
                         ctx.textAlign = 'center';
-                        ctx.textBaseline = 'middle';
+                        ctx.textBaseline = 'bottom';
                         for (let i = 0; i < len; i++) {
                             const p = lmList[i];
                             const dia = p.dia || p.d || 100;
@@ -1377,17 +1389,21 @@ function initGisCanvasLayerClass() {
                             let angle = Math.atan2(dy, dx);
                             if (angle > Math.PI / 2 || angle < -Math.PI / 2) angle += Math.PI;
 
+                            // 관 위쪽으로 띄워 배치 (관경별 실제 굵기 반영: 굵기 반경 + 2.8px 여백)
+                            const curPipeW = (dia > 500) ? wOverActual : ((dia > 250) ? w500Actual : w250Actual);
+                            const labelOffset = (curPipeW / 2) + 2.8;
+
                             ctx.save();
                             ctx.translate(mx, my);
                             ctx.rotate(angle);
                             ctx.lineJoin = 'round';
                             ctx.miterLimit = 2;
-                            // QField 스타일: 굵은 검정 외곽선 + 순백색 본체 텍스트
-                            ctx.lineWidth = 3.6;
+                            // QField 스타일: 굵은 검정 외곽선 + 순백색 본체 텍스트 (관 위쪽으로 띄움)
+                            ctx.lineWidth = 2.8;
                             ctx.strokeStyle = '#000000';
-                            ctx.strokeText(labelText, 0, 0);
+                            ctx.strokeText(labelText, 0, -labelOffset);
                             ctx.fillStyle = '#FFFFFF';
-                            ctx.fillText(labelText, 0, 0);
+                            ctx.fillText(labelText, 0, -labelOffset);
                             ctx.restore();
                         }
                         ctx.restore();
@@ -1563,12 +1579,12 @@ class WaterMapManager {
                 closed: 3.0
             },
             pipes: {
-                pipesLm: 1.0,
-                pipesLm2: 1.0,
-                servicePipes: 0.8,
-                pipesLm_d250: 1.0, // 0~250mm 이하 기본 선 굵기 (사용자 요청: 가장 작은 설정)
-                pipesLm_d500: 1.5, // 250~500mm 기본 선 굵기 (사용자 요청: 가장 작은 설정)
-                pipesLm_dover: 2.0 // 500mm 초과 기본 선 굵기 (사용자 요청: 가장 작은 설정)
+                pipesLm: 0.8,
+                pipesLm2: 0.8,
+                servicePipes: 0.6,
+                pipesLm_d250: 0.8, // 0~250mm 이하 기본 선 굵기 (충분히 얇은 설정)
+                pipesLm_d500: 1.2, // 250~500mm 기본 선 굵기
+                pipesLm_dover: 1.6 // 500mm 초과 기본 선 굵기
             },
             facilities: {
                 blocks: 2.2,
