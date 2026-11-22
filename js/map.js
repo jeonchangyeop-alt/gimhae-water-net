@@ -1025,14 +1025,19 @@ function initGisCanvasLayerClass() {
             const topLeft = map.containerPointToLayerPoint([-padX, -padY]);
             L.DomUtil.setPosition(this._canvas, topLeft);
 
-            if (this._canvas.width !== totalW || this._canvas.height !== totalH) {
-                this._canvas.width = totalW;
-                this._canvas.height = totalH;
+            // QField 수준의 선명도를 위한 Retina / HiDPI (devicePixelRatio) 하드웨어 가속 연동
+            const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+            const canvasW = Math.round(totalW * dpr);
+            const canvasH = Math.round(totalH * dpr);
+
+            if (this._canvas.width !== canvasW || this._canvas.height !== canvasH) {
+                this._canvas.width = canvasW;
+                this._canvas.height = canvasH;
                 this._canvas.style.width = totalW + 'px';
                 this._canvas.style.height = totalH + 'px';
             }
 
-            this._render(padX, padY);
+            this._render(padX, padY, dpr);
         },
 
         redraw: function () {
@@ -1041,7 +1046,7 @@ function initGisCanvasLayerClass() {
             }
         },
 
-        _render: function (padX, padY) {
+        _render: function (padX, padY, dpr = 1) {
             const ctx = this._ctx;
             const map = this._map;
             const mm = this.mm;
@@ -1049,6 +1054,9 @@ function initGisCanvasLayerClass() {
 
             ctx.clearRect(0, 0, this._canvas.width, this._canvas.height);
             ctx.save();
+            if (dpr !== 1) {
+                ctx.scale(dpr, dpr);
+            }
             ctx.translate(padX || 0, padY || 0);
 
             const zoom = map.getZoom();
@@ -1059,12 +1067,12 @@ function initGisCanvasLayerClass() {
             const minLng = viewBounds.getWest();
             const maxLng = viewBounds.getEast();
 
-            // 1. 급수관로 (Service Pipes 48,125개) - Cyan (#06B6D4) (zoom 15 이상 고밀도 구간만 표출)
+            // 1. 급수관로 (Service Pipes 48,125개) - QField 스타일 네온 사이언 (#00E5FF) (zoom 15 이상 고밀도 구간만 표출)
             if (mm.layerVisibility.servicePipes && zoom >= 15 && mm.spatialIndexSp) {
                 const spList = mm.spatialIndexSp.query(minLat, maxLat, minLng, maxLng);
                 const len = spList.length;
                 if (len > 0) {
-                    const baseW = (mm.symbolSizes && mm.symbolSizes.pipes && mm.symbolSizes.pipes.servicePipes) || 0.8;
+                    const baseW = (mm.symbolSizes && mm.symbolSizes.pipes && mm.symbolSizes.pipes.servicePipes) || 1.0;
                     const pathSp = new Path2D();
                     for (let i = 0; i < len; i++) {
                         const coords = spList[i].coordinates || spList[i].c;
@@ -1076,18 +1084,28 @@ function initGisCanvasLayerClass() {
                             pathSp.lineTo(pt.x, pt.y);
                         }
                     }
+                    const spLineWidth = Math.max(1.8, baseW * (zoom >= 17 ? 2.0 : 1.4));
+                    // 1차: 어두운 외곽선 (위성배경 대비 선명도 부각)
                     ctx.beginPath();
-                    ctx.strokeStyle = (mm.pipeColors && mm.pipeColors.servicePipes) || '#0D9488';
-                    ctx.lineWidth = baseW * (zoom >= 16 ? 1.3 : 1.0);
+                    ctx.strokeStyle = 'rgba(0, 30, 50, 0.7)';
+                    ctx.lineWidth = spLineWidth + 1.2;
+                    ctx.lineCap = 'round';
+                    ctx.lineJoin = 'round';
+                    ctx.stroke(pathSp);
+
+                    // 2차: QField 네온 사이언 본체 선
+                    ctx.beginPath();
+                    ctx.strokeStyle = (mm.pipeColors && mm.pipeColors.servicePipes) || '#00E5FF';
+                    ctx.lineWidth = spLineWidth;
                     ctx.lineCap = 'round';
                     ctx.lineJoin = 'round';
                     ctx.stroke(pathSp);
 
                     // 1-2. 급수관로 관경 라벨 표출 (사용자 요청: 라벨 ON 상태 & zoom >= 17)
                     if (mm.labelVisibility && mm.labelVisibility.servicePipes && zoom >= 17) {
-                        const spLabelSize = (mm.labelSizes && mm.labelSizes.servicePipes) || 8;
+                        const spLabelSize = (mm.labelSizes && mm.labelSizes.servicePipes) || 10;
                         ctx.save();
-                        ctx.font = `bold ${spLabelSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+                        ctx.font = `800 ${spLabelSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
                         ctx.textAlign = 'center';
                         ctx.textBaseline = 'middle';
                         for (let i = 0; i < len; i++) {
@@ -1114,10 +1132,13 @@ function initGisCanvasLayerClass() {
                             ctx.save();
                             ctx.translate(mx, my);
                             ctx.rotate(angle);
-                            ctx.lineWidth = 2.5;
-                            ctx.strokeStyle = 'rgba(255, 255, 255, 0.95)';
+                            ctx.lineJoin = 'round';
+                            ctx.miterLimit = 2;
+                            // QField 스타일: 고대비 블랙 외곽선 버퍼 + 순백색 본체 텍스트
+                            ctx.lineWidth = 3.2;
+                            ctx.strokeStyle = '#000000';
                             ctx.strokeText(labelText, 0, 0);
-                            ctx.fillStyle = '#0E7490';
+                            ctx.fillStyle = '#FFFFFF';
                             ctx.fillText(labelText, 0, 0);
                             ctx.restore();
                         }
@@ -1126,12 +1147,13 @@ function initGisCanvasLayerClass() {
                 }
             }
 
-            // 2. 상수관로 LM2 - Indigo (#4F46E5) (zoom 13 이상에서 표출)
+            // 2. 상수관로 LM2 - QField 비비드 블루 (zoom 13 이상에서 표출)
             if (mm.layerVisibility.pipesLm2 && zoom >= 13 && mm.spatialIndexLm2) {
                 const lm2List = mm.spatialIndexLm2.query(minLat, maxLat, minLng, maxLng);
                 const len = lm2List.length;
                 if (len > 0) {
-                    const baseW = (mm.symbolSizes && mm.symbolSizes.pipes && mm.symbolSizes.pipes.pipesLm2) || 1.0;
+                    const baseW = (mm.symbolSizes && mm.symbolSizes.pipes && mm.symbolSizes.pipes.pipesLm2) || 1.1;
+                    const lm2LineWidth = Math.max(2.4, baseW * (zoom >= 17 ? 2.8 : (zoom >= 15 ? 2.2 : 1.6)));
                     const pathLm2 = new Path2D();
                     for (let i = 0; i < len; i++) {
                         const coords = lm2List[i].coordinates || lm2List[i].c;
@@ -1143,9 +1165,18 @@ function initGisCanvasLayerClass() {
                             pathLm2.lineTo(pt.x, pt.y);
                         }
                     }
+                    // 1차: 어두운 외곽선 (casing: 위성사진 대비 극대화)
                     ctx.beginPath();
-                    ctx.strokeStyle = (mm.pipeColors && mm.pipeColors.pipesLm2) || '#2563EB';
-                    ctx.lineWidth = baseW * (zoom >= 16 ? 1.4 : 1.0);
+                    ctx.strokeStyle = 'rgba(0, 15, 60, 0.75)';
+                    ctx.lineWidth = lm2LineWidth + 1.2;
+                    ctx.lineCap = 'round';
+                    ctx.lineJoin = 'round';
+                    ctx.stroke(pathLm2);
+
+                    // 2차: QField 비비드 블루 본체 선
+                    ctx.beginPath();
+                    ctx.strokeStyle = (mm.pipeColors && mm.pipeColors.pipesLm2) || '#0040FF';
+                    ctx.lineWidth = lm2LineWidth;
                     ctx.lineCap = 'round';
                     ctx.lineJoin = 'round';
                     ctx.stroke(pathLm2);
@@ -1153,13 +1184,12 @@ function initGisCanvasLayerClass() {
 
                 // 2-2. 상수관로 (LM2) 관로 라벨 표출 (라벨 ON & zoom >= 15)
                 if (mm.labelVisibility && mm.labelVisibility.pipesLm2 && zoom >= 15) {
-                    const lm2LabelSize = (mm.labelSizes && mm.labelSizes.pipesLm2) || 9;
+                    const lm2LabelSize = (mm.labelSizes && mm.labelSizes.pipesLm2) || 12;
                     ctx.save();
-                    ctx.font = `bold ${lm2LabelSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+                    ctx.font = `800 ${lm2LabelSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
                     ctx.textAlign = 'center';
                     ctx.textBaseline = 'middle';
                     const lm2Fld = (mm.labelFields && mm.labelFields.pipesLm2) || 'pip_lbl';
-                    const lm2Col = (mm.pipeColors && mm.pipeColors.pipesLm2) || '#2563EB';
                     for (let i = 0; i < len; i++) {
                         const p = lm2List[i];
                         const dia = p.dia || p.d || 80;
@@ -1188,10 +1218,13 @@ function initGisCanvasLayerClass() {
                         ctx.save();
                         ctx.translate(mx, my);
                         ctx.rotate(angle);
-                        ctx.lineWidth = 3;
-                        ctx.strokeStyle = 'rgba(255, 255, 255, 0.95)';
+                        ctx.lineJoin = 'round';
+                        ctx.miterLimit = 2;
+                        // QField 스타일: 굵은 검정 외곽선 + 순백색 본체 텍스트
+                        ctx.lineWidth = 3.6;
+                        ctx.strokeStyle = '#000000';
                         ctx.strokeText(labelText, 0, 0);
-                        ctx.fillStyle = lm2Col;
+                        ctx.fillStyle = '#FFFFFF';
                         ctx.fillText(labelText, 0, 0);
                         ctx.restore();
                     }
@@ -1207,9 +1240,9 @@ function initGisCanvasLayerClass() {
                 if (len > 0) {
                     const subVis = (mm.subLayerVisibility && mm.subLayerVisibility.pipesLm) ? mm.subLayerVisibility.pipesLm : { d250: true, d500: true, dover: true };
                     const sizes = (mm.symbolSizes && mm.symbolSizes.pipes) ? mm.symbolSizes.pipes : {};
-                    const w250 = sizes.pipesLm_d250 || 1.0;
-                    const w500 = sizes.pipesLm_d500 || 1.5;
-                    const wOver = sizes.pipesLm_dover || 2.0;
+                    const w250 = sizes.pipesLm_d250 || 1.1;
+                    const w500 = sizes.pipesLm_d500 || 1.6;
+                    const wOver = sizes.pipesLm_dover || 2.2;
                     const zoomScale = zoom >= 19 ? 1.6 : (zoom >= 17 ? 1.35 : (zoom >= 15 ? 1.15 : (zoom >= 13 ? 1.0 : 0.8)));
 
                     // LOD (레벨 오브 디테일): 원거리(zoom < 14)에서는 대구경 송·배수관(D250 초과) 위주로 표출하여 렉 완전 차단!
@@ -1255,11 +1288,12 @@ function initGisCanvasLayerClass() {
                         ctx.save();
                         ctx.beginPath();
                         ctx.strokeStyle = (mm.pipeColors && mm.pipeColors.dover) || '#DC2626';
-                        ctx.lineWidth = Math.max(1.5, wOver * zoomScale);
+                        const wOverActual = Math.max(2.8, wOver * zoomScale * 1.5);
+                        ctx.lineWidth = wOverActual;
                         ctx.lineCap = 'round';
                         ctx.lineJoin = 'round';
-                        const dashSize = Math.max(6, Math.round(wOver * 1.8));
-                        const gapSize = Math.max(4, Math.round(wOver * 1.1));
+                        const dashSize = Math.max(7, Math.round(wOverActual * 1.8));
+                        const gapSize = Math.max(5, Math.round(wOverActual * 1.1));
                         ctx.setLineDash([dashSize, gapSize]);
                         ctx.stroke(pathOver);
                         ctx.restore();
@@ -1267,31 +1301,49 @@ function initGisCanvasLayerClass() {
 
                     // 3-2. 250mm 초과 ~ 500mm 이하 (빨간색 실선)
                     if (has500) {
+                        const w500Actual = Math.max(2.5, w500 * zoomScale * 1.5);
                         ctx.beginPath();
-                        ctx.strokeStyle = (mm.pipeColors && mm.pipeColors.d500) || '#DC2626';
-                        ctx.lineWidth = Math.max(1.2, w500 * zoomScale);
+                        ctx.strokeStyle = 'rgba(60, 0, 0, 0.75)';
+                        ctx.lineWidth = w500Actual + 1.2;
                         ctx.lineCap = 'round';
                         ctx.lineJoin = 'round';
                         ctx.setLineDash([]);
                         ctx.stroke(path500);
+
+                        ctx.beginPath();
+                        ctx.strokeStyle = (mm.pipeColors && mm.pipeColors.d500) || '#DC2626';
+                        ctx.lineWidth = w500Actual;
+                        ctx.lineCap = 'round';
+                        ctx.lineJoin = 'round';
+                        ctx.stroke(path500);
                     }
 
-                    // 3-3. 0 ~ 250mm 이하 (파란색 실선)
+                    // 3-3. 0 ~ 250mm 이하 (QField 비비드 파란색 실선)
                     if (has250) {
+                        const w250Actual = Math.max(2.4, w250 * zoomScale * 1.5);
+                        // 1차 어두운 외곽선 (casing: 선명한 대비 효과)
                         ctx.beginPath();
-                        ctx.strokeStyle = (mm.pipeColors && mm.pipeColors.d250) || '#2563EB';
-                        ctx.lineWidth = Math.max(1.0, w250 * zoomScale);
+                        ctx.strokeStyle = 'rgba(0, 15, 60, 0.75)';
+                        ctx.lineWidth = w250Actual + 1.2;
                         ctx.lineCap = 'round';
                         ctx.lineJoin = 'round';
                         ctx.setLineDash([]);
+                        ctx.stroke(path250);
+
+                        // 2차 비비드 블루 본체 선
+                        ctx.beginPath();
+                        ctx.strokeStyle = (mm.pipeColors && mm.pipeColors.d250) || '#0040FF';
+                        ctx.lineWidth = w250Actual;
+                        ctx.lineCap = 'round';
+                        ctx.lineJoin = 'round';
                         ctx.stroke(path250);
                     }
 
                     // 3-4. 상수관로 (LM) 관경 라벨 표출 (사용자 요청: 라벨 ON 상태 & zoom >= 15)
                     if (mm.labelVisibility && mm.labelVisibility.pipesLm && zoom >= 15) {
-                        const pipeLabelSize = (mm.labelSizes && mm.labelSizes.pipesLm) || 9;
+                        const pipeLabelSize = (mm.labelSizes && mm.labelSizes.pipesLm) || 12;
                         ctx.save();
-                        ctx.font = `bold ${pipeLabelSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+                        ctx.font = `800 ${pipeLabelSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
                         ctx.textAlign = 'center';
                         ctx.textBaseline = 'middle';
                         for (let i = 0; i < len; i++) {
@@ -1328,11 +1380,13 @@ function initGisCanvasLayerClass() {
                             ctx.save();
                             ctx.translate(mx, my);
                             ctx.rotate(angle);
-                            ctx.lineWidth = 3;
-                            ctx.strokeStyle = 'rgba(255, 255, 255, 0.95)';
+                            ctx.lineJoin = 'round';
+                            ctx.miterLimit = 2;
+                            // QField 스타일: 굵은 검정 외곽선 + 순백색 본체 텍스트
+                            ctx.lineWidth = 3.6;
+                            ctx.strokeStyle = '#000000';
                             ctx.strokeText(labelText, 0, 0);
-                            const activePipeCol = dia > 250 ? ((mm.pipeColors && mm.pipeColors.d500) || '#DC2626') : ((mm.pipeColors && mm.pipeColors.d250) || '#2563EB');
-                            ctx.fillStyle = activePipeCol;
+                            ctx.fillStyle = '#FFFFFF';
                             ctx.fillText(labelText, 0, 0);
                             ctx.restore();
                         }
@@ -3065,17 +3119,21 @@ class WaterMapManager {
         // 10. 관로 색상 선택 드롭다운 이벤트 바인딩
         if (!this.pipeColors) {
             this.pipeColors = {
-                d250: '#2563EB',
+                d250: '#0040FF',
                 d500: '#DC2626',
                 dover: '#DC2626',
-                pipesLm2: '#2563EB',
-                servicePipes: '#0D9488'
+                pipesLm2: '#0040FF',
+                servicePipes: '#00E5FF'
             };
         }
         try {
             const savedColors = localStorage.getItem('gis_pipe_colors');
             if (savedColors) {
-                Object.assign(this.pipeColors, JSON.parse(savedColors));
+                const parsed = JSON.parse(savedColors);
+                if (parsed.d250 === '#2563EB') parsed.d250 = '#0040FF';
+                if (parsed.pipesLm2 === '#2563EB') parsed.pipesLm2 = '#0040FF';
+                if (parsed.servicePipes === '#0D9488') parsed.servicePipes = '#00E5FF';
+                Object.assign(this.pipeColors, parsed);
             }
         } catch (e) {}
 
@@ -4746,38 +4804,103 @@ const blkFld = (this.labelFields && this.labelFields.blocks) || 'name';
         }
 
         // =========================================================================
-        // 6. 국토교통부 VWorld Search API 2.0 (실시간 장소·상호·도로명·지번 병렬 쿼리)
+        // 6. 전국 주소·장소 통합 검색 (대한민국 전역 도로명/지번/POI + VWorld 병렬 쿼리)
         // =========================================================================
         if (cleanQ.length >= 2) {
             try {
-                const vworldPromise = this.queryVWorldSearchApi(q);
-                const timeoutPromise = new Promise(resolve => setTimeout(() => resolve([]), 1400));
-                const vResults = await Promise.race([vworldPromise, timeoutPromise]);
+                const nationwidePromise = Promise.allSettled([
+                    this.queryNationwideAddressApi(q),
+                    this.queryVWorldSearchApi(q)
+                ]);
+                const timeoutPromise = new Promise(resolve => setTimeout(() => resolve([]), 3500));
+                const resList = await Promise.race([nationwidePromise, timeoutPromise]);
 
-                if (Array.isArray(vResults) && vResults.length > 0) {
-                    vResults.forEach(item => {
-                        const isGimhae = (item.lat >= 35.1 && item.lat <= 35.45 && item.lng >= 128.65 && item.lng <= 129.1);
-                        addCandidate({
-                            title: item.title,
-                            name: item.title,
-                            category: item.category || 'VWorld 장소/주소',
-                            road: item.road || item.parcel,
-                            parcel: item.parcel || item.road,
-                            lat: item.lat,
-                            lng: item.lng,
-                            block: item.block || (isGimhae ? this.findNearestBlockName(item.lat, item.lng) : ''),
-                            source: 'VWorld 공간정보'
-                        }, 'POI', isGimhae ? 1300 : 900, item.title);
+                if (Array.isArray(resList)) {
+                    resList.forEach(res => {
+                        if (res && res.status === 'fulfilled' && Array.isArray(res.value)) {
+                            res.value.forEach(item => {
+                                const isGimhae = (item.lat >= 35.1 && item.lat <= 35.45 && item.lng >= 128.65 && item.lng <= 129.1);
+                                addCandidate({
+                                    title: item.title,
+                                    name: item.title,
+                                    category: item.category || '전국 주소/장소',
+                                    road: item.road || item.parcel,
+                                    parcel: item.parcel || item.road,
+                                    lat: item.lat,
+                                    lng: item.lng,
+                                    block: item.block || (isGimhae ? this.findNearestBlockName(item.lat, item.lng) : '전국'),
+                                    source: item.source || '전국 공간정보'
+                                }, 'POI', isGimhae ? 1400 : 1050, item.title);
+                            });
+                        }
                     });
                 }
             } catch (err) {
-                // VWorld 실패 시에도 로컬 GIS 결과 보존
+                // 외부 검색 오류 시에도 로컬 GIS 결과 보존
             }
         }
 
         // 최종 정렬: 점수 내림차순 정렬 후 최상위 20개 반환
         candidates.sort((a, b) => (b._score || 0) - (a._score || 0));
         return candidates.slice(0, 20);
+    }
+
+    /**
+     * 대한민국 전국 주소 및 장소 검색 API (OpenStreetMap Nominatim 한국 지오코더 + 도로명/지번/지명 완전 대응)
+     */
+    async queryNationwideAddressApi(query) {
+        const q = (query || '').trim();
+        if (!q || q.length < 2) return [];
+        try {
+            const encQuery = encodeURIComponent(q);
+            const url = https://nominatim.openstreetmap.org/search?q=&countrycodes=kr&format=json&addressdetails=1&limit=10;
+            const resp = await fetch(url, {
+                headers: {
+                    'Accept-Language': 'ko-KR,ko;q=0.9,en;q=0.5'
+                }
+            });
+            if (!resp.ok) return [];
+            const data = await resp.json();
+            if (!Array.isArray(data)) return [];
+
+            return data.map(it => {
+                const lat = parseFloat(it.lat);
+                const lng = parseFloat(it.lon);
+                const addr = it.address || {};
+                
+                // 전국 행정구역 주소 조립
+                const parts = [];
+                if (addr.province || addr.city) parts.push(addr.province || addr.city);
+                if (addr.borough || addr.district || addr.county) parts.push(addr.borough || addr.district || addr.county);
+                if (addr.suburb || addr.neighbourhood) parts.push(addr.suburb || addr.neighbourhood);
+                if (addr.road) parts.push(addr.road);
+                if (addr.house_number) parts.push(addr.house_number);
+
+                const fullAddr = parts.length > 0 ? parts.join(' ') : (it.display_name || '');
+                const title = it.name || (it.display_name ? it.display_name.split(',')[0].trim() : q);
+                const isGimhae = (lat >= 35.1 && lat <= 35.45 && lng >= 128.65 && lng <= 129.1);
+
+                let regionName = '전국';
+                if (addr.city) regionName = addr.city;
+                else if (addr.province) regionName = addr.province;
+                else if (addr.district) regionName = addr.district;
+
+                return {
+                    title: title,
+                    name: title,
+                    category: '전국 주소/장소',
+                    road: fullAddr,
+                    parcel: it.display_name || fullAddr,
+                    lat: lat,
+                    lng: lng,
+                    block: isGimhae ? this.findNearestBlockName(lat, lng) : regionName,
+                    source: '전국 공간정보'
+                };
+            }).filter(it => !isNaN(it.lat) && !isNaN(it.lng));
+        } catch (e) {
+            console.warn('전국 주소 검색 오류:', e);
+            return [];
+        }
     }
 
     /**
@@ -4910,11 +5033,19 @@ const blkFld = (this.labelFields && this.labelFields.blocks) || 'name';
         const lat = typeof item.lat === 'number' ? item.lat : parseFloat(item.lat);
         const lng = typeof item.lng === 'number' ? item.lng : parseFloat(item.lng);
 
-        // 시설물별 최적 확대 배율
+        const isGimhae = (lat >= 35.1 && lat <= 35.45 && lng >= 128.65 && lng <= 129.1);
+
+        // 시설물 및 전국 위치별 최적 확대 배율
         let targetZoom = 17;
-        if (item.facilityType === 'BOOSTER' || item.facilityType === 'RESERVOIR') targetZoom = 18;
-        else if (item.facilityType === 'VALVE' || item.facilityType === 'METER' || item.facilityType === 'PIPE') targetZoom = 19;
-        else if (item.facilityType === 'FLOW_METER') targetZoom = 18;
+        if (!isGimhae) {
+            targetZoom = 16;
+        } else if (item.facilityType === 'BOOSTER' || item.facilityType === 'RESERVOIR') {
+            targetZoom = 18;
+        } else if (item.facilityType === 'VALVE' || item.facilityType === 'METER' || item.facilityType === 'PIPE') {
+            targetZoom = 19;
+        } else if (item.facilityType === 'FLOW_METER') {
+            targetZoom = 18;
+        }
 
         // 지도 부드럽게 비행 이동
         this.map.flyTo([lat, lng], targetZoom, { duration: 1.0 });
@@ -4939,9 +5070,9 @@ const blkFld = (this.labelFields && this.labelFields.blocks) || 'name';
 
         this.verifiedMarker = L.marker([lat, lng], { icon: icon }).addTo(this.layers.verification);
 
-        // 2. 인근 시설물(100m 이내) 실시간 자동 스캔
-        const nearbySummary = this.scanNearbyFacilities(lat, lng, 100);
-        const matchedBlock = item.block || this.findNearestBlockName(lat, lng);
+        // 2. 인근 시설물(100m 이내) 실시간 자동 스캔 (김해 관내일 때만 실행)
+        const nearbySummary = isGimhae ? this.scanNearbyFacilities(lat, lng, 100) : [];
+        const matchedBlock = item.block || (isGimhae ? this.findNearestBlockName(lat, lng) : '전국');
 
         const cleanTitle = (item.title || item.road || '선택 위치')
             .replace(/\[클릭\s*확인\]\s*/g, '')

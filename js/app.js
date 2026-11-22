@@ -6675,7 +6675,7 @@ function initVWorldMapControls() {
                 listContainer.innerHTML = `
                     <div style="padding:22px; text-align:center; color:#64748B; font-size:12.5px;">
                         <i class="fa-solid fa-spinner fa-spin" style="color:#2563EB; font-size:20px; margin-bottom:8px; display:block;"></i>
-                        GIS 데이터 및 VWorld 주소 검색 중...
+                        전국 주소 및 GIS 공간정보 검색 중...
                     </div>
                 `;
             }
