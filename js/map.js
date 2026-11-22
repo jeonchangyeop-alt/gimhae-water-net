@@ -4853,7 +4853,7 @@ const blkFld = (this.labelFields && this.labelFields.blocks) || 'name';
         if (!q || q.length < 2) return [];
         try {
             const encQuery = encodeURIComponent(q);
-            const url = https://nominatim.openstreetmap.org/search?q=&countrycodes=kr&format=json&addressdetails=1&limit=10;
+            const url = 'https://nominatim.openstreetmap.org/search?q=' + encQuery + '&countrycodes=kr&format=json&addressdetails=1&limit=10';
             const resp = await fetch(url, {
                 headers: {
                     'Accept-Language': 'ko-KR,ko;q=0.9,en;q=0.5'
