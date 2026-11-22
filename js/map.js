@@ -1026,7 +1026,7 @@ function initGisCanvasLayerClass() {
             L.DomUtil.setPosition(this._canvas, topLeft);
 
             // QField 수준의 선명도를 위한 Retina / HiDPI (devicePixelRatio) 하드웨어 가속 연동
-            const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+            const dpr = Math.min(window.devicePixelRatio || 1, 1.5); // 고선명 유지 & 렉/버벅임 차단 최적화 배율
             const canvasW = Math.round(totalW * dpr);
             const canvasH = Math.round(totalH * dpr);
 
@@ -1103,7 +1103,7 @@ function initGisCanvasLayerClass() {
                     ctx.lineJoin = 'round';
                     ctx.stroke(pathSp);
 
-                    // 1-2. 급수관로 관경 라벨 표출 (사용자 요청: 라벨 ON 상태 & zoom >= 17)
+                    // 1-2. 급수관로 관경 라벨 표출 (중복 솎아내기 및 초고속 렌더링 최적화)
                     if (mm.labelVisibility && mm.labelVisibility.servicePipes && zoom >= 17) {
                         const spLabelSize = (mm.labelSizes && mm.labelSizes.servicePipes) || 9;
                         ctx.save();
@@ -1111,23 +1111,41 @@ function initGisCanvasLayerClass() {
                         ctx.textAlign = 'center';
                         ctx.textBaseline = 'bottom';
                         const spOffset = (spLineWidth / 2) + 2.5;
+                        const placedSpLabels = [];
+                        const maxSpLabels = 60;
+                        const minSegSq = zoom >= 18 ? 1600 : 2500; // 최소 40~50px 이상 선분만
 
                         for (let i = 0; i < len; i++) {
                             const sp = spList[i];
-                            const dia = sp.dia || sp.d || 20;
                             const coords = sp.coordinates || sp.c;
                             if (!coords || coords.length < 2) continue;
                             const midIdx = Math.floor(coords.length / 2);
                             const pt1 = map.latLngToContainerPoint(coords[midIdx - 1]);
                             const pt2 = map.latLngToContainerPoint(coords[midIdx]);
                             const distSq = (pt2.x - pt1.x) * (pt2.x - pt1.x) + (pt2.y - pt1.y) * (pt2.y - pt1.y);
-                            if (distSq < 500) continue;
+                            if (distSq < minSegSq) continue;
                             const mx = (pt1.x + pt2.x) / 2;
                             const my = (pt1.y + pt2.y) / 2;
+
+                            const dia = sp.dia || sp.d || 20;
                             const spFld = (mm.labelFields && mm.labelFields.servicePipes) || 'dia';
                             let labelText = 'D' + dia;
                             if (spFld === 'len') labelText = (sp.len ? sp.len + 'm' : 'D' + dia);
                             else if (spFld === 'id') labelText = sp.id || ('D' + dia);
+
+                            // 중복 및 밀집 라벨 필터링 (렉 원천 차단)
+                            let isOverlap = false;
+                            for (let k = 0; k < placedSpLabels.length; k++) {
+                                const pl = placedSpLabels[k];
+                                const ddx = mx - pl.x;
+                                const ddy = my - pl.y;
+                                const dsq = ddx * ddx + ddy * ddy;
+                                if (pl.text === labelText && dsq < 14400) { isOverlap = true; break; }
+                                if (dsq < 1600) { isOverlap = true; break; }
+                            }
+                            if (isOverlap) continue;
+                            placedSpLabels.push({ x: mx, y: my, text: labelText });
+
                             const dx = pt2.x - pt1.x;
                             const dy = pt2.y - pt1.y;
                             let angle = Math.atan2(dy, dx);
@@ -1138,13 +1156,14 @@ function initGisCanvasLayerClass() {
                             ctx.rotate(angle);
                             ctx.lineJoin = 'round';
                             ctx.miterLimit = 2;
-                            // 관 위쪽으로 띄워 표출
                             ctx.lineWidth = 2.6;
                             ctx.strokeStyle = '#000000';
                             ctx.strokeText(labelText, 0, -spOffset);
                             ctx.fillStyle = '#FFFFFF';
                             ctx.fillText(labelText, 0, -spOffset);
                             ctx.restore();
+
+                            if (placedSpLabels.length >= maxSpLabels) break;
                         }
                         ctx.restore();
                     }
@@ -1188,7 +1207,7 @@ function initGisCanvasLayerClass() {
                     ctx.stroke(pathLm2);
                 }
 
-                // 2-2. 상수관로 (LM2) 관로 라벨 표출 (라벨 ON & zoom >= 15)
+                // 2-2. 상수관로 (LM2) 관로 라벨 표출 (중복 솎아내기 및 초고속 렌더링 최적화)
                 if (mm.labelVisibility && mm.labelVisibility.pipesLm2 && zoom >= 15) {
                     const lm2LabelSize = (mm.labelSizes && mm.labelSizes.pipesLm2) || 10;
                     ctx.save();
@@ -1196,27 +1215,43 @@ function initGisCanvasLayerClass() {
                     ctx.textAlign = 'center';
                     ctx.textBaseline = 'bottom';
                     const lm2Offset = (lm2LineWidth / 2) + 2.8;
+                    const placedLm2Labels = [];
+                    const maxLm2Labels = 75;
+                    const minSegSq = zoom >= 18 ? 1600 : (zoom >= 16 ? 2500 : 3600);
 
                     const lm2Fld = (mm.labelFields && mm.labelFields.pipesLm2) || 'pip_lbl';
                     for (let i = 0; i < len; i++) {
                         const p = lm2List[i];
-                        const dia = p.dia || p.d || 80;
                         const coords = p.coordinates || p.c;
                         if (!coords || coords.length < 2) continue;
                         const midIdx = Math.floor(coords.length / 2);
                         const pt1 = map.latLngToContainerPoint(coords[midIdx - 1]);
                         const pt2 = map.latLngToContainerPoint(coords[midIdx]);
                         const distSq = (pt2.x - pt1.x) * (pt2.x - pt1.x) + (pt2.y - pt1.y) * (pt2.y - pt1.y);
-                        if (distSq < 700) continue;
+                        if (distSq < minSegSq) continue;
                         const mx = (pt1.x + pt2.x) / 2;
                         const my = (pt1.y + pt2.y) / 2;
 
+                        const dia = p.dia || p.d || 80;
                         let labelText = '';
                         if (lm2Fld === 'pip_lbl') labelText = p.pip_lbl || ('D' + dia);
                         else if (lm2Fld === 'dia') labelText = 'D' + dia;
                         else if (lm2Fld === 'mat') labelText = p.mat || 'DCIP';
                         else if (lm2Fld === 'len') labelText = (p.len ? p.len + 'm' : '-');
                         else if (lm2Fld === 'id') labelText = p.id || '-';
+
+                        // 중복 및 밀집 라벨 필터링 (렉 원천 차단)
+                        let isOverlap = false;
+                        for (let k = 0; k < placedLm2Labels.length; k++) {
+                            const pl = placedLm2Labels[k];
+                            const ddx = mx - pl.x;
+                            const ddy = my - pl.y;
+                            const dsq = ddx * ddx + ddy * ddy;
+                            if (pl.text === labelText && dsq < 16900) { isOverlap = true; break; }
+                            if (dsq < 2025) { isOverlap = true; break; }
+                        }
+                        if (isOverlap) continue;
+                        placedLm2Labels.push({ x: mx, y: my, text: labelText });
 
                         const dx = pt2.x - pt1.x;
                         const dy = pt2.y - pt1.y;
@@ -1228,13 +1263,14 @@ function initGisCanvasLayerClass() {
                         ctx.rotate(angle);
                         ctx.lineJoin = 'round';
                         ctx.miterLimit = 2;
-                        // 관 위쪽으로 띄워 표출
                         ctx.lineWidth = 2.8;
                         ctx.strokeStyle = '#000000';
                         ctx.strokeText(labelText, 0, -lm2Offset);
                         ctx.fillStyle = '#FFFFFF';
                         ctx.fillText(labelText, 0, -lm2Offset);
                         ctx.restore();
+
+                        if (placedLm2Labels.length >= maxLm2Labels) break;
                     }
                     ctx.restore();
                 }
@@ -1351,25 +1387,30 @@ function initGisCanvasLayerClass() {
                         ctx.stroke(path250);
                     }
 
-                    // 3-4. 상수관로 (LM) 관경 라벨 표출 (사용자 요청: 라벨 ON 상태 & zoom >= 15)
+                    // 3-4. 상수관로 (LM) 관경 라벨 표출 (중복 솎아내기 및 초고속 렌더링 최적화)
                     if (mm.labelVisibility && mm.labelVisibility.pipesLm && zoom >= 15) {
                         const pipeLabelSize = (mm.labelSizes && mm.labelSizes.pipesLm) || 10;
                         ctx.save();
                         ctx.font = `bold ${pipeLabelSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
                         ctx.textAlign = 'center';
                         ctx.textBaseline = 'bottom';
+                        const placedLmLabels = [];
+                        const maxLmLabels = 80;
+                        const minSegSq = zoom >= 18 ? 1600 : (zoom >= 16 ? 2500 : 3600);
+
                         for (let i = 0; i < len; i++) {
                             const p = lmList[i];
-                            const dia = p.dia || p.d || 100;
                             const coords = p.coordinates || p.c;
                             if (!coords || coords.length < 2) continue;
                             const midIdx = Math.floor(coords.length / 2);
                             const pt1 = map.latLngToContainerPoint(coords[midIdx - 1]);
                             const pt2 = map.latLngToContainerPoint(coords[midIdx]);
                             const distSq = (pt2.x - pt1.x) * (pt2.x - pt1.x) + (pt2.y - pt1.y) * (pt2.y - pt1.y);
-                            if (distSq < 700) continue;
+                            if (distSq < minSegSq) continue;
                             const mx = (pt1.x + pt2.x) / 2;
                             const my = (pt1.y + pt2.y) / 2;
+
+                            const dia = p.dia || p.d || 100;
                             const lmFld = (mm.labelFields && mm.labelFields.pipesLm) || 'pip_lbl';
                             let labelText = '';
                             if (lmFld === 'pip_lbl') {
@@ -1383,6 +1424,19 @@ function initGisCanvasLayerClass() {
                             } else if (lmFld === 'id') {
                                 labelText = p.id || '-';
                             }
+
+                            // 중복 및 밀집 라벨 필터링 (동일 라벨 140px 이내, 다른 라벨 45px 이내 건너뜀)
+                            let isOverlap = false;
+                            for (let k = 0; k < placedLmLabels.length; k++) {
+                                const pl = placedLmLabels[k];
+                                const ddx = mx - pl.x;
+                                const ddy = my - pl.y;
+                                const dsq = ddx * ddx + ddy * ddy;
+                                if (pl.text === labelText && dsq < 19600) { isOverlap = true; break; }
+                                if (dsq < 2025) { isOverlap = true; break; }
+                            }
+                            if (isOverlap) continue;
+                            placedLmLabels.push({ x: mx, y: my, text: labelText });
 
                             const dx = pt2.x - pt1.x;
                             const dy = pt2.y - pt1.y;
@@ -1398,13 +1452,14 @@ function initGisCanvasLayerClass() {
                             ctx.rotate(angle);
                             ctx.lineJoin = 'round';
                             ctx.miterLimit = 2;
-                            // QField 스타일: 굵은 검정 외곽선 + 순백색 본체 텍스트 (관 위쪽으로 띄움)
                             ctx.lineWidth = 2.8;
                             ctx.strokeStyle = '#000000';
                             ctx.strokeText(labelText, 0, -labelOffset);
                             ctx.fillStyle = '#FFFFFF';
                             ctx.fillText(labelText, 0, -labelOffset);
                             ctx.restore();
+
+                            if (placedLmLabels.length >= maxLmLabels) break;
                         }
                         ctx.restore();
                     }
