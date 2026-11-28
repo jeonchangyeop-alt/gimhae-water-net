@@ -4946,11 +4946,48 @@ const blkFld = (this.labelFields && this.labelFields.blocks) || 'name';
 
         const cleanQ = q.toLowerCase().replace(/\s+/g, '');
         const coreQ = cleanQ.replace(/블록|소블록|중블록|가압장|배수지|정수장|취수장|지구/g, '');
+        // 번지·도로명 번호가 포함되거나 도로명/지번 주소 형태면 '구체적 주소 검색'으로 판별
+        const hasDigits = /\d/.test(cleanQ);
+        const isAddressQuery = hasDigits || /(?:번길|번지|[가-힣0-9]+(?:로|길)\d*)$/.test(cleanQ);
         const gis = this.gisData || window.GIMHAE_GIS_DATA || {};
 
         const candidates = [];
         const seenKeys = new Set();
         const seenAddresses = new Set();
+
+        const stripRegionPrefix = (txt) => txt.replace(/^(?:경상남도|경남)?(?:김해시)?/, '');
+
+        const calcFieldScore = (rawText) => {
+            if (!rawText) return 0;
+            const cleanText = String(rawText).toLowerCase().replace(/\s+/g, '');
+            const stripped = stripRegionPrefix(cleanText);
+            if (!cleanText) return 0;
+
+            if (cleanText === cleanQ || stripped === cleanQ) {
+                return 900; // 완전 일치
+            }
+            // 끝에 번지/도로번호까지 정확히 일치 (예: "부원동 111-11" vs "부원동 111-110" 구분)
+            if (stripped.endsWith(cleanQ) || cleanText.endsWith(cleanQ)) {
+                return 750;
+            }
+            if (cleanText.startsWith(cleanQ) || stripped.startsWith(cleanQ)) {
+                // 숫자 뒤 추가 자릿수 여부 확인 ("111-11" 검색 시 "111-110"보다 "111-11(편의점)" 우선)
+                const afterChar = (stripped.startsWith(cleanQ) ? stripped : cleanText).charAt(cleanQ.length);
+                return (hasDigits && /\d/.test(afterChar)) ? 420 : 650;
+            }
+            if (cleanText.includes(cleanQ) || stripped.includes(cleanQ)) {
+                const idx = stripped.indexOf(cleanQ);
+                const afterChar = idx >= 0 ? stripped.charAt(idx + cleanQ.length) : '';
+                return (hasDigits && /\d/.test(afterChar)) ? 260 : 480;
+            }
+            if (coreQ.length >= 2 && cleanText.includes(coreQ)) {
+                return 160;
+            }
+            if (cleanQ.includes(cleanText)) {
+                return 20; // 상위 지명만 일부 포함된 경우 (예: "부원동 111-11" 검색 시 "부원동")
+            }
+            return 40;
+        };
 
         const addCandidate = (item, type, basePriority = 500, matchText = '') => {
             if (!item) return;
@@ -4970,19 +5007,11 @@ const blkFld = (this.labelFields && this.labelFields.blocks) || 'name';
                 }
             }
 
-            let relevance = 0;
-            const cleanText = (matchText || item.title || '').toLowerCase().replace(/\s+/g, '');
-            if (cleanText === cleanQ) {
-                relevance = 600;
-            } else if (cleanText.startsWith(cleanQ)) {
-                relevance = 400;
-            } else if (cleanText.includes(cleanQ)) {
-                relevance = 250;
-            } else if (coreQ.length >= 2 && cleanText.includes(coreQ)) {
-                relevance = 150;
-            } else {
-                relevance = 50;
-            }
+            const relevance = Math.max(
+                calcFieldScore(matchText || item.title || ''),
+                calcFieldScore(item.road || ''),
+                calcFieldScore(item.parcel || '')
+            );
 
             const score = basePriority + relevance;
             candidates.push({
@@ -5014,6 +5043,15 @@ const blkFld = (this.labelFields && this.labelFields.blocks) || 'name';
                                 (coreQ.length >= 2 && cleanTitle.includes(coreQ));
 
                 if (isMatch) {
+                    const isAdminArea = (item.category === '행정구역');
+                    const isSpecificAddrMatch = cleanRoad.includes(cleanQ) || cleanParcel.includes(cleanQ);
+                    let basePri = 2300;
+                    if (isAdminArea && (isAddressQuery || cleanTitle !== cleanQ)) {
+                        // 구체적 주소/번지 검색 시 단순 행정구역명("부원동")은 구체적 주소 아래로 배치
+                        basePri = isAddressQuery ? 900 : 1600;
+                    } else if (isAddressQuery && !isSpecificAddrMatch) {
+                        basePri = 1400;
+                    }
                     addCandidate({
                         ...item,
                         title: item.title,
@@ -5026,7 +5064,7 @@ const blkFld = (this.labelFields && this.labelFields.blocks) || 'name';
                         block: item.block,
                         facilityType: item.category === '가압장' ? 'BOOSTER' : (item.category === '배수지' || item.category === '정수장' ? 'RESERVOIR' : 'FACILITY'),
                         source: '김해 GIS 핵심색인'
-                    }, 'FACILITY', 2300, item.title);
+                    }, 'FACILITY', basePri, item.title);
                 }
             });
         }
@@ -5083,6 +5121,7 @@ const blkFld = (this.labelFields && this.labelFields.blocks) || 'name';
                             (coreQ.length >= 2 && (strippedName.includes(coreQ) || coreQ.includes(strippedName)));
 
             if (isMatch) {
+                const blockPri = isAddressQuery ? 1100 : 2200;
                 addCandidate({
                     title: `[관망블록] ${rawName}`,
                     name: rawName,
@@ -5097,7 +5136,7 @@ const blkFld = (this.labelFields && this.labelFields.blocks) || 'name';
                     facilityType: 'BLOCK',
                     facilityId: bInfo.id,
                     source: '김해 관망 블록대장'
-                }, 'BLOCK', 2200, rawName);
+                }, 'BLOCK', blockPri, rawName);
             }
         });
 
@@ -5126,7 +5165,7 @@ const blkFld = (this.labelFields && this.labelFields.blocks) || 'name';
                         facilityType: 'BOOSTER',
                         facilityId: bst.id || '',
                         source: '김해 GIS 가압장대장'
-                    }, 'FACILITY', 2000, name);
+                    }, 'FACILITY', isAddressQuery ? 1500 : 2000, name);
                 }
             });
         }
@@ -5157,7 +5196,7 @@ const blkFld = (this.labelFields && this.labelFields.blocks) || 'name';
                         facilityType: 'RESERVOIR',
                         facilityId: res.id || '',
                         source: '김해 GIS 배수지대장'
-                    }, 'FACILITY', 2000, name);
+                    }, 'FACILITY', isAddressQuery ? 1500 : 2000, name);
                 }
             });
         }
@@ -5195,10 +5234,11 @@ const blkFld = (this.labelFields && this.labelFields.blocks) || 'name';
         // =========================================================================
         if (gis.billingConsumers && Array.isArray(gis.billingConsumers) && cleanQ.length >= 2) {
             let storeCount = 0;
-            let addrCount = 0;
+            let exactAddrCount = 0;
+            let partialAddrCount = 0;
             const bLen = gis.billingConsumers.length;
 
-            for (let i = 0; i < bLen && (storeCount < 10 || addrCount < 10); i++) {
+            for (let i = 0; i < bLen && (storeCount < 10 || exactAddrCount < 10); i++) {
                 const b = gis.billingConsumers[i];
                 const name = (b.name || '').trim();
                 const addr = (b.addr || '').trim();
@@ -5226,22 +5266,27 @@ const blkFld = (this.labelFields && this.labelFields.blocks) || 'name';
                     }, 'STORE', 1500, name);
                 }
 
-                // 5-B. 도로명/지번 주소 일치
-                if (addrCount < 10 && (cleanAddr.includes(cleanQ) || cleanOaddr.includes(cleanQ))) {
-                    addrCount++;
-                    addCandidate({
-                        title: addr || oaddr,
-                        name: addr || oaddr,
-                        category: addr ? '도로명주소' : '지번주소',
-                        road: addr || oaddr,
-                        parcel: oaddr || addr,
-                        lat: b.lat,
-                        lng: b.lng,
-                        block: b.block || this.findNearestBlockName(b.lat, b.lng),
-                        facilityType: 'CONSUMER',
-                        facilityId: b.cno || '',
-                        source: '김해 주소대장'
-                    }, 'ADDRESS', 1200, addr || oaddr);
+                // 5-B. 도로명/지번 주소 일치 (정확 일치 우선 확보, 주소 검색 시 최상위 정렬)
+                if (cleanAddr.includes(cleanQ) || cleanOaddr.includes(cleanQ)) {
+                    const isExactAddr = (stripRegionPrefix(cleanAddr) === cleanQ || stripRegionPrefix(cleanOaddr) === cleanQ);
+                    if (isExactAddr || partialAddrCount < 20) {
+                        if (isExactAddr) exactAddrCount++;
+                        else partialAddrCount++;
+                        const addrPri = isAddressQuery ? 2600 : 1850;
+                        addCandidate({
+                            title: addr || oaddr,
+                            name: addr || oaddr,
+                            category: addr ? '도로명주소' : '지번주소',
+                            road: addr || oaddr,
+                            parcel: oaddr || addr,
+                            lat: b.lat,
+                            lng: b.lng,
+                            block: b.block || this.findNearestBlockName(b.lat, b.lng),
+                            facilityType: 'CONSUMER',
+                            facilityId: b.cno || '',
+                            source: '김해 주소대장'
+                        }, 'ADDRESS', addrPri, addr || oaddr);
+                    }
                 }
             }
         }
@@ -5263,6 +5308,13 @@ const blkFld = (this.labelFields && this.labelFields.blocks) || 'name';
                         if (res && res.status === 'fulfilled' && Array.isArray(res.value)) {
                             res.value.forEach(item => {
                                 const isGimhae = (item.lat >= 35.1 && item.lat <= 35.45 && item.lng >= 128.65 && item.lng <= 129.1);
+                                const isSpecificAddress = (item.category === '도로명주소' || item.category === '지번주소' || item.hasSpecificAddr);
+                                let poiPri = isGimhae ? 1100 : 800;
+                                if (isSpecificAddress) {
+                                    poiPri = isGimhae ? (isAddressQuery ? 2550 : 1800) : (isAddressQuery ? 1900 : 1200);
+                                } else if (item.category === '장소/건물') {
+                                    poiPri = isGimhae ? (isAddressQuery ? 1700 : 1500) : 1050;
+                                }
                                 addCandidate({
                                     title: item.title,
                                     name: item.title,
@@ -5273,7 +5325,7 @@ const blkFld = (this.labelFields && this.labelFields.blocks) || 'name';
                                     lng: item.lng,
                                     block: item.block || (isGimhae ? this.findNearestBlockName(item.lat, item.lng) : '전국'),
                                     source: item.source || '전국 공간정보'
-                                }, 'POI', isGimhae ? 1400 : 1050, item.title);
+                                }, isSpecificAddress ? 'ADDRESS' : 'POI', poiPri, item.title);
                             });
                         }
                     });
@@ -5322,6 +5374,7 @@ const blkFld = (this.labelFields && this.labelFields.blocks) || 'name';
                 const fullAddr = parts.length > 0 ? parts.join(' ') : (it.display_name || '');
                 const title = it.name || (it.display_name ? it.display_name.split(',')[0].trim() : q);
                 const isGimhae = (lat >= 35.1 && lat <= 35.45 && lng >= 128.65 && lng <= 129.1);
+                const hasSpecificAddr = !!(addr.road || addr.house_number);
 
                 let regionName = '전국';
                 if (addr.city) regionName = addr.city;
@@ -5336,6 +5389,7 @@ const blkFld = (this.labelFields && this.labelFields.blocks) || 'name';
                     parcel: it.display_name || fullAddr,
                     lat: lat,
                     lng: lng,
+                    hasSpecificAddr: hasSpecificAddr,
                     block: isGimhae ? this.findNearestBlockName(lat, lng) : regionName,
                     source: '전국 공간정보'
                 };
