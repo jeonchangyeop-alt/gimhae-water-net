@@ -10329,6 +10329,94 @@ body.theme-navy .glc-label-field-select {
     }
 }
 
+/* 모바일 전용 지도 회전 컨트롤: 나침반(북쪽 복귀) + 회전 잠금 (현재위치 버튼 바로 위) */
+.map-rotate-controls {
+    position: absolute;
+    right: 12px;
+    bottom: 144px;
+    z-index: 500;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.btn-map-rotate-fab {
+    width: 44px;
+    height: 44px;
+    background: #FFFFFF;
+    border: 1px solid #CBD5E1;
+    border-radius: 50%;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.16), 0 1px 3px rgba(0, 0, 0, 0.08);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 17px;
+    color: #334155;
+    cursor: pointer;
+    outline: none;
+    user-select: none;
+    touch-action: manipulation;
+    padding: 0;
+}
+
+.btn-map-rotate-fab:active {
+    background: #EFF6FF;
+    border-color: #3B82F6;
+}
+
+.btn-map-rotate-fab.active {
+    background: #2563EB;
+    border-color: #1D4ED8;
+    color: #FFFFFF;
+}
+
+.map-compass-needle {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    line-height: 1;
+    transition: transform 0.08s linear;
+}
+
+.map-compass-needle .needle-n {
+    font-size: 10px;
+    font-weight: 800;
+    color: #DC2626;
+}
+
+.map-compass-needle i {
+    font-size: 18px;
+    color: #DC2626;
+    margin-top: -3px;
+}
+
+.btn-map-rotate-fab.rotated {
+    border-color: #DC2626;
+}
+
+@media (max-width: 768px) {
+    .map-rotate-controls {
+        right: 10px;
+        bottom: 132px;
+    }
+
+    .btn-map-rotate-fab {
+        width: 40px;
+        height: 40px;
+        font-size: 16px;
+    }
+}
+
+body.theme-navy .btn-map-rotate-fab {
+    background: #0F172A;
+    border-color: #334155;
+    color: #F8FAFC;
+}
+
+body.theme-navy .btn-map-rotate-fab.active {
+    background: #2563EB;
+    border-color: #38BDF8;
+}
+
 /* GPS 블루 도트 펄스 애니메이션 마커 */
 .custom-user-gps-icon {
     background: transparent !important;

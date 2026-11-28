@@ -1039,9 +1039,9 @@ function initGisCanvasLayerClass() {
                 if (!this._renderedTopLeftLatLng || this._renderedZoom === undefined) return;
                 if (this._map.getZoom() !== this._renderedZoom) return;
                 const curPos = this._map.latLngToLayerPoint(this._renderedTopLeftLatLng);
-                const idealPos = this._map.containerPointToLayerPoint([-this._padX, -this._padY]);
-                if (Math.abs(curPos.x - idealPos.x) > this._padX * 0.82 ||
-                    Math.abs(curPos.y - idealPos.y) > this._padY * 0.82) {
+                const idealPos = this._computeFrame(this._map.getSize(), this._padX, this._padY).tl;
+                if (Math.abs(curPos.x - idealPos.x) > (this._slackX || this._padX) * 0.82 ||
+                    Math.abs(curPos.y - idealPos.y) > (this._slackY || this._padY) * 0.82) {
                     this._update(false, false);
                 }
             };
@@ -1059,6 +1059,16 @@ function initGisCanvasLayerClass() {
                 this._update(true, true);
             };
 
+            // 7. (모바일 회전) 회전 중에는 캔버스가 회전 패널과 함께 돌기만 하고(원형 버퍼로 가장자리 확보),
+            //    회전이 멈추면 라벨·심볼을 화면 기준으로 다시 세우기 위해 1회 재렌더링
+            this._onRotate = () => {
+                if (this._rotateTimer) clearTimeout(this._rotateTimer);
+                this._rotateTimer = setTimeout(() => {
+                    this._rotateTimer = null;
+                    this._update(false, false);
+                }, 160);
+            };
+
             map.on('zoomstart', this._onZoomStart);
             if (map._zoomAnimated) {
                 map.on('zoomanim', this._onZoomAnim);
@@ -1069,6 +1079,7 @@ function initGisCanvasLayerClass() {
             map.on('moveend', this._onMoveEnd);
             map.on('viewreset', this._onViewReset);
             map.on('resize', this._onResize);
+            map.on('rotate', this._onRotate);
 
             this._update(true, true);
         },
@@ -1089,6 +1100,11 @@ function initGisCanvasLayerClass() {
             map.off('moveend', this._onMoveEnd);
             map.off('viewreset', this._onViewReset);
             map.off('resize', this._onResize);
+            map.off('rotate', this._onRotate);
+            if (this._rotateTimer) {
+                clearTimeout(this._rotateTimer);
+                this._rotateTimer = null;
+            }
         },
 
         _initCanvas: function () {
@@ -1123,7 +1139,28 @@ function initGisCanvasLayerClass() {
             if (!this._map) return '';
             const size = this._map.getSize();
             const center = this._map.getCenter();
-            return `${this._map.getZoom()}|${center.lat.toFixed(7)}|${center.lng.toFixed(7)}|${size.x}|${size.y}`;
+            const bearing = this._map._rotate ? (this._map._bearing || 0).toFixed(4) : '0';
+            return `${this._map.getZoom()}|${center.lat.toFixed(7)}|${center.lng.toFixed(7)}|${size.x}|${size.y}|${bearing}`;
+        },
+
+        /**
+         * 캔버스가 덮을 영역(레이어 좌표 기준 좌상단 tl, 폭 w, 높이 h) 계산
+         * - 일반(비회전) 지도: 화면 + 사방 패딩 직사각형 (기존과 동일)
+         * - 회전 가능 지도(모바일): 화면 중심 기준 원(대각선 + 패딩)을 덮는 정사각형
+         *   → 어떤 각도로 돌려도 가장자리가 비지 않아 회전 중 재렌더링이 필요 없음
+         */
+        _computeFrame: function (size, padX, padY) {
+            const map = this._map;
+            if (map._rotate) {
+                const half = Math.ceil(Math.sqrt(Math.pow(size.x / 2 + padX, 2) + Math.pow(size.y / 2 + padY, 2)));
+                const c = map.containerPointToLayerPoint([size.x / 2, size.y / 2]);
+                return { tl: L.point(Math.round(c.x - half), Math.round(c.y - half)), w: half * 2, h: half * 2 };
+            }
+            return {
+                tl: map.containerPointToLayerPoint([-padX, -padY]),
+                w: size.x + padX * 2,
+                h: size.y + padY * 2
+            };
         },
 
         _update: function (immediate = false, force = false) {
@@ -1155,14 +1192,27 @@ function initGisCanvasLayerClass() {
             if (!force && this._lastRenderKey === renderKey) return;
 
             // 패닝 중 가장자리 잘림 및 깜빡임 차단 + 필레이트 절감을 위한 사방 16% 버퍼 패딩
-            const padX = Math.round(size.x * 0.16);
-            const padY = Math.round(size.y * 0.16);
-            const totalW = size.x + padX * 2;
-            const totalH = size.y + padY * 2;
+            // (회전 가능 지도는 원형 프레임 자체가 여유를 주므로 6%만 추가)
+            const padRatio = map._rotate ? 0.06 : 0.16;
+            const padX = Math.round(size.x * padRatio);
+            const padY = Math.round(size.y * padRatio);
+            const frame = this._computeFrame(size, padX, padY);
+            const totalW = frame.w;
+            const totalH = frame.h;
             this._padX = padX;
             this._padY = padY;
+            if (map._rotate) {
+                // 어떤 각도에서도 화면이 덮이는 최소 여유 (패닝 시 재렌더링 기준)
+                const slack = Math.max(8, frame.w / 2 - Math.sqrt(Math.pow(size.x / 2, 2) + Math.pow(size.y / 2, 2)));
+                this._slackX = slack;
+                this._slackY = slack;
+            } else {
+                this._slackX = padX;
+                this._slackY = padY;
+            }
 
-            const topLeft = map.containerPointToLayerPoint([-padX, -padY]);
+            const topLeft = frame.tl;
+            this._tl = topLeft;
             if (L.Browser.any3d) {
                 L.DomUtil.setTransform(this._canvas, topLeft, 1);
             } else {
@@ -1183,10 +1233,10 @@ function initGisCanvasLayerClass() {
             }
 
             this._renderedZoom = map.getZoom();
-            this._renderedTopLeftLatLng = map.containerPointToLatLng([-padX, -padY]);
+            this._renderedTopLeftLatLng = map.layerPointToLatLng(topLeft);
             this._lastRenderKey = renderKey;
 
-            this._render(padX, padY, dpr, size);
+            this._render(totalW, totalH, dpr);
         },
 
         redraw: function () {
@@ -1195,13 +1245,13 @@ function initGisCanvasLayerClass() {
             }
         },
 
-        _getValveSprite: function (cde, r, dpr) {
+        _getValveSprite: function (cde, r, dpr, rotDeg = 0) {
             const rKey = r.toFixed(1);
-            const key = `${cde}_${rKey}_${dpr}`;
+            const key = `${cde}_${rKey}_${dpr}_${rotDeg}`;
             let sprite = this._valveSprites.get(key);
             if (sprite) return sprite;
 
-            if (this._valveSprites.size > 120) {
+            if (this._valveSprites.size > 400) {
                 this._valveSprites.clear();
             }
 
@@ -1215,12 +1265,18 @@ function initGisCanvasLayerClass() {
 
             const sctx = sprite.getContext('2d');
             if (dpr !== 1) sctx.scale(dpr, dpr);
+            if (rotDeg) {
+                // 지도 회전각만큼 반대로 돌려 그려 화면에서는 항상 똑바로 보이게 함
+                sctx.translate(half, half);
+                sctx.rotate(rotDeg * Math.PI / 180);
+                sctx.translate(-half, -half);
+            }
             drawValveSymbol(sctx, { cde: cde }, half, half, r);
             this._valveSprites.set(key, sprite);
             return sprite;
         },
 
-        _render: function (padX, padY, dpr = 1, viewSize = null) {
+        _render: function (frameW, frameH, dpr = 1) {
             const ctx = this._ctx;
             const map = this._map;
             const mm = this.mm;
@@ -1233,28 +1289,50 @@ function initGisCanvasLayerClass() {
             if (dpr !== 1) {
                 ctx.scale(dpr, dpr);
             }
-            ctx.translate(padX || 0, padY || 0);
 
-            const size = viewSize || map.getSize();
+            // 그리기 좌표계 = 캔버스 내부 CSS 픽셀 (캔버스 좌상단 = 레이어 좌표 this._tl, 크기 frameW x frameH)
+            const tl = this._tl || L.point(0, 0);
             const zoom = map.getZoom();
-            // 화면 밖 불필요 객체 질의 방지: 버퍼 패딩 0.16과 일치 (약간 여유 0.18)
-            const viewBounds = map.getBounds().pad(0.18);
-            const minLat = viewBounds.getSouth();
-            const maxLat = viewBounds.getNorth();
-            const minLng = viewBounds.getWest();
-            const maxLng = viewBounds.getEast();
-            const minPxX = -padX - 20;
-            const maxPxX = size.x + padX + 20;
-            const minPxY = -padY - 20;
-            const maxPxY = size.y + padY + 20;
+            let minLat, maxLat, minLng, maxLng;
+            if (map._rotate) {
+                // 회전 가능 지도: 원형(정사각) 프레임 전체를 질의해 회전 시에도 가장자리 누락 없음
+                const llA = map.layerPointToLatLng(tl);
+                const llB = map.layerPointToLatLng(L.point(tl.x + frameW, tl.y + frameH));
+                minLat = Math.min(llA.lat, llB.lat); maxLat = Math.max(llA.lat, llB.lat);
+                minLng = Math.min(llA.lng, llB.lng); maxLng = Math.max(llA.lng, llB.lng);
+            } else {
+                // 화면 밖 불필요 객체 질의 방지: 버퍼 패딩 0.16과 일치 (약간 여유 0.18)
+                const viewBounds = map.getBounds().pad(0.18);
+                minLat = viewBounds.getSouth();
+                maxLat = viewBounds.getNorth();
+                minLng = viewBounds.getWest();
+                maxLng = viewBounds.getEast();
+            }
+            const minPxX = -20;
+            const maxPxX = frameW + 20;
+            const minPxY = -20;
+            const maxPxY = frameH + 20;
             const minSegDistSq = zoom <= 15 ? 2.25 : 1.44;
 
-            // 초고속 Web Mercator [0, 1] -> 컨테이너 픽셀 좌표 변환 상수 (매 프레임 1회만 계산)
+            // (모바일 회전) 화면 기준 각도 보정값: 라벨·심볼을 항상 똑바로 세우는 데 사용
+            const bearingRad = map._rotate ? (map._bearing || 0) : 0;
+            const uprightAngle = (a) => {
+                let s = a + bearingRad;
+                while (s > Math.PI) s -= Math.PI * 2;
+                while (s < -Math.PI) s += Math.PI * 2;
+                return (s > Math.PI / 2 || s < -Math.PI / 2) ? a + Math.PI : a;
+            };
+
+            // 초고속 Web Mercator [0, 1] -> 캔버스 픽셀 좌표 변환 상수 (매 프레임 1회만 계산)
             const scale = 256 * Math.pow(2, zoom);
             const pixelOrigin = map.getPixelOrigin();
-            const mapPanePos = L.DomUtil.getPosition(map.getPanes().mapPane) || { x: 0, y: 0 };
-            const originX = pixelOrigin.x - mapPanePos.x;
-            const originY = pixelOrigin.y - mapPanePos.y;
+            const originX = pixelOrigin.x + tl.x;
+            const originY = pixelOrigin.y + tl.y;
+            // 사전 투영 좌표가 없는 예외 데이터용 변환 (위경도 -> 캔버스 픽셀)
+            const toLocal = (ll) => {
+                const p = map.latLngToLayerPoint(ll);
+                return L.point(p.x - tl.x, p.y - tl.y);
+            };
 
             // 1. 급수관로 (Service Pipes 48,125개) - zoom 16 이상 상세 구간에서만 고속 표출 (줌 15 이하 렉 원천 차단)
             if (mm.layerVisibility.servicePipes && zoom >= 16 && mm.spatialIndexSp) {
@@ -1288,10 +1366,10 @@ function initGisCanvasLayerClass() {
                         } else {
                             const coords = sp.coordinates || sp.c;
                             if (!coords || coords.length < 2) continue;
-                            const pt0 = map.latLngToContainerPoint(coords[0]);
+                            const pt0 = toLocal(coords[0]);
                             pathSp.moveTo(pt0.x, pt0.y);
                             for (let j = 1; j < coords.length; j++) {
-                                const pt = map.latLngToContainerPoint(coords[j]);
+                                const pt = toLocal(coords[j]);
                                 pathSp.lineTo(pt.x, pt.y);
                             }
                         }
@@ -1349,8 +1427,8 @@ function initGisCanvasLayerClass() {
                                 const coords = sp.coordinates || sp.c;
                                 if (!coords || coords.length < 2) continue;
                                 const midIdx = Math.floor(coords.length / 2);
-                                const pt1 = map.latLngToContainerPoint(coords[midIdx - 1]);
-                                const pt2 = map.latLngToContainerPoint(coords[midIdx]);
+                                const pt1 = toLocal(coords[midIdx - 1]);
+                                const pt2 = toLocal(coords[midIdx]);
                                 const dx = pt2.x - pt1.x, dy = pt2.y - pt1.y;
                                 if ((dx * dx + dy * dy) < minSegSq) continue;
                                 mx = (pt1.x + pt2.x) * 0.5;
@@ -1373,7 +1451,7 @@ function initGisCanvasLayerClass() {
                             if (isOverlap) continue;
                             placedSpLabels.push({ x: mx, y: my });
 
-                            if (angle > Math.PI / 2 || angle < -Math.PI / 2) angle += Math.PI;
+                            angle = uprightAngle(angle);
 
                             ctx.save();
                             ctx.translate(mx, my);
@@ -1421,10 +1499,10 @@ function initGisCanvasLayerClass() {
                         } else {
                             const coords = p.coordinates || p.c;
                             if (!coords || coords.length < 2) continue;
-                            const pt0 = map.latLngToContainerPoint(coords[0]);
+                            const pt0 = toLocal(coords[0]);
                             pathLm2.moveTo(pt0.x, pt0.y);
                             for (let j = 1; j < coords.length; j++) {
-                                const pt = map.latLngToContainerPoint(coords[j]);
+                                const pt = toLocal(coords[j]);
                                 pathLm2.lineTo(pt.x, pt.y);
                             }
                         }
@@ -1483,8 +1561,8 @@ function initGisCanvasLayerClass() {
                                 const coords = p.coordinates || p.c;
                                 if (!coords || coords.length < 2) continue;
                                 const midIdx = Math.floor(coords.length / 2);
-                                const pt1 = map.latLngToContainerPoint(coords[midIdx - 1]);
-                                const pt2 = map.latLngToContainerPoint(coords[midIdx]);
+                                const pt1 = toLocal(coords[midIdx - 1]);
+                                const pt2 = toLocal(coords[midIdx]);
                                 const dx = pt2.x - pt1.x, dy = pt2.y - pt1.y;
                                 if ((dx * dx + dy * dy) < minSegSq) continue;
                                 mx = (pt1.x + pt2.x) * 0.5;
@@ -1509,7 +1587,7 @@ function initGisCanvasLayerClass() {
                             if (isOverlap) continue;
                             placedLm2Labels.push({ x: mx, y: my });
 
-                            if (angle > Math.PI / 2 || angle < -Math.PI / 2) angle += Math.PI;
+                            angle = uprightAngle(angle);
 
                             ctx.save();
                             ctx.translate(mx, my);
@@ -1586,10 +1664,10 @@ function initGisCanvasLayerClass() {
                         } else {
                             const coords = p.coordinates || p.c;
                             if (!coords || coords.length < 2) continue;
-                            const pt0 = map.latLngToContainerPoint(coords[0]);
+                            const pt0 = toLocal(coords[0]);
                             targetPath.moveTo(pt0.x, pt0.y);
                             for (let j = 1; j < coords.length; j++) {
-                                const pt = map.latLngToContainerPoint(coords[j]);
+                                const pt = toLocal(coords[j]);
                                 targetPath.lineTo(pt.x, pt.y);
                             }
                         }
@@ -1692,8 +1770,8 @@ function initGisCanvasLayerClass() {
                                 const coords = p.coordinates || p.c;
                                 if (!coords || coords.length < 2) continue;
                                 const midIdx = Math.floor(coords.length / 2);
-                                const pt1 = map.latLngToContainerPoint(coords[midIdx - 1]);
-                                const pt2 = map.latLngToContainerPoint(coords[midIdx]);
+                                const pt1 = toLocal(coords[midIdx - 1]);
+                                const pt2 = toLocal(coords[midIdx]);
                                 const dx = pt2.x - pt1.x, dy = pt2.y - pt1.y;
                                 if ((dx * dx + dy * dy) < minSegSq) continue;
                                 mx = (pt1.x + pt2.x) * 0.5;
@@ -1718,7 +1796,7 @@ function initGisCanvasLayerClass() {
                             if (isOverlap) continue;
                             placedLmLabels.push({ x: mx, y: my });
 
-                            if (angle > Math.PI / 2 || angle < -Math.PI / 2) angle += Math.PI;
+                            angle = uprightAngle(angle);
 
                             const curPipeW = (dia > 500) ? wOverActual : ((dia > 250) ? w500Actual : w250Actual);
                             const labelOffset = (curPipeW / 2) + 2.8;
@@ -1759,8 +1837,8 @@ function initGisCanvasLayerClass() {
                             const subKey = subVis[cde] !== undefined ? cde : 'OTHER';
                             if (subVis[subKey] === false) continue;
 
-                            const px = (v._nx !== undefined) ? (v._nx * scale - originX) : (map.latLngToContainerPoint([v.lat, v.lng]).x);
-                            const py = (v._ny !== undefined) ? (v._ny * scale - originY) : (map.latLngToContainerPoint([v.lat, v.lng]).y);
+                            const px = (v._nx !== undefined) ? (v._nx * scale - originX) : (toLocal([v.lat, v.lng]).x);
+                            const py = (v._ny !== undefined) ? (v._ny * scale - originY) : (toLocal([v.lat, v.lng]).y);
                             if (px < minPxX || px > maxPxX || py < minPxY || py > maxPxY) continue;
                             const dotKey = ((px + 4096) >> 1) * 8192 + ((py + 4096) >> 1);
                             if (seenDots.has(dotKey)) continue;
@@ -1775,19 +1853,25 @@ function initGisCanvasLayerClass() {
                         ctx.stroke(dotPath);
                     } else {
                         // zoom >= 16: 오프스크린 GPU 텍스처 블릿 기반 정밀 SA 심볼 렌더링
+                        // (모바일 회전 시 심볼은 5도 단위로 반대 회전된 스프라이트를 사용해 똑바로 유지)
+                        let spriteRot = 0;
+                        if (bearingRad) {
+                            spriteRot = Math.round((-bearingRad * 180 / Math.PI) / 5) * 5;
+                            spriteRot = ((spriteRot % 360) + 360) % 360;
+                        }
                         for (let i = 0; i < len; i++) {
                             const v = vList[i];
                             const cde = v.cde || 'OTHER';
                             const subKey = subVis[cde] !== undefined ? cde : 'OTHER';
                             if (subVis[subKey] === false) continue;
 
-                            const px = (v._nx !== undefined) ? (v._nx * scale - originX) : (map.latLngToContainerPoint([v.lat, v.lng]).x);
-                            const py = (v._ny !== undefined) ? (v._ny * scale - originY) : (map.latLngToContainerPoint([v.lat, v.lng]).y);
+                            const px = (v._nx !== undefined) ? (v._nx * scale - originX) : (toLocal([v.lat, v.lng]).x);
+                            const py = (v._ny !== undefined) ? (v._ny * scale - originY) : (toLocal([v.lat, v.lng]).y);
                             if (px < minPxX || px > maxPxX || py < minPxY || py > maxPxY) continue;
 
                             const baseR = sizes[subKey] !== undefined ? sizes[subKey] : 5.0;
                             const r = baseR * zoomScale;
-                            const sprite = this._getValveSprite(v.cde || 'SA200', r, dpr);
+                            const sprite = this._getValveSprite(v.cde || 'SA200', r, dpr, spriteRot);
                             const half = sprite._halfCss;
                             ctx.drawImage(sprite, px - half, py - half, sprite._cssSize, sprite._cssSize);
                         }
@@ -1821,8 +1905,8 @@ function initGisCanvasLayerClass() {
                         const bType = isClosed ? 'closed' : (isBulk ? 'bulk' : 'normal');
                         if (subVis[bType] === false) continue;
 
-                        const px = (b._nx !== undefined) ? (b._nx * scale - originX) : (map.latLngToContainerPoint([b.lat, b.lng]).x);
-                        const py = (b._ny !== undefined) ? (b._ny * scale - originY) : (map.latLngToContainerPoint([b.lat, b.lng]).y);
+                        const px = (b._nx !== undefined) ? (b._nx * scale - originX) : (toLocal([b.lat, b.lng]).x);
+                        const py = (b._ny !== undefined) ? (b._ny * scale - originY) : (toLocal([b.lat, b.lng]).y);
                         if (px < minPxX || px > maxPxX || py < minPxY || py > maxPxY) continue;
 
                         if (isClosed) {
@@ -2075,11 +2159,143 @@ class WaterMapManager {
     }
 
     /**
+     * (모바일 회전) 두 손가락 핀치 줌 중 의도치 않은 회전 방지:
+     * 손가락을 일정 각도(12도) 이상 비틀었을 때부터 회전을 시작하고, 그 전에는 확대/축소만 적용
+     */
+    _initRotationGestureThreshold() {
+        const map = this.map;
+        const tg = map && map.touchGestures;
+        if (!tg || typeof tg._onTouchMove !== 'function' || tg._gisThresholdPatched) return;
+        const ROTATE_START_DEG = 12;
+        const origMove = tg._onTouchMove;
+        const origEnd = tg._onTouchEnd;
+
+        tg._onTouchMove = function (e) {
+            if (this._rotating && !this._gisRotLatched && e.touches && e.touches.length === 2) {
+                const p1 = map.mouseEventToContainerPoint(e.touches[0]);
+                const p2 = map.mouseEventToContainerPoint(e.touches[1]);
+                const v = p1.subtract(p2);
+                const ang = Math.atan2(v.y, v.x);
+                if (this._gisRotStartAng === undefined) this._gisRotStartAng = ang;
+                let d = (ang - this._gisRotStartAng) * 180 / Math.PI;
+                while (d > 180) d -= 360;
+                while (d < -180) d += 360;
+                if (Math.abs(d) < ROTATE_START_DEG) {
+                    // 임계각 전: 회전 없이 확대/축소·이동만
+                    this._rotating = false;
+                    try { origMove.call(this, e); } finally { this._rotating = true; }
+                    return;
+                }
+                // 임계각 도달: 현재 손가락 각도를 기준으로 회전 시작 (갑자기 튀지 않게 기준 재설정)
+                this._gisRotLatched = true;
+                this._startTheta = Math.atan(v.x / v.y);
+                this._startBearing = map.getBearing() + (v.y < 0 ? 180 : 0);
+            }
+            return origMove.call(this, e);
+        };
+
+        tg._onTouchEnd = function (e) {
+            this._gisRotLatched = false;
+            this._gisRotStartAng = undefined;
+            return origEnd.call(this, e);
+        };
+        tg._gisThresholdPatched = true;
+    }
+
+    /**
+     * (모바일 회전) 나침반(북쪽 복귀) 버튼 + 회전 잠금 버튼 초기화
+     */
+    _initRotationControls() {
+        const wrap = document.getElementById('mapRotateControls');
+        const btnCompass = document.getElementById('btnMapCompass');
+        const btnLock = document.getElementById('btnMapRotateLock');
+        const needle = document.getElementById('mapCompassNeedle');
+        if (!wrap || !btnCompass || !btnLock) return;
+        wrap.style.display = 'flex';
+
+        const refreshCompass = () => {
+            const deg = this.map.getBearing ? this.map.getBearing() : 0;
+            if (needle) needle.style.transform = `rotate(${deg}deg)`;
+            btnCompass.classList.toggle('rotated', Math.abs(((deg + 180) % 360) - 180) > 0.5);
+        };
+        const refreshLock = () => {
+            btnLock.classList.toggle('active', this.rotationLocked);
+            btnLock.innerHTML = this.rotationLocked
+                ? '<i class="fa-solid fa-lock"></i>'
+                : '<i class="fa-solid fa-lock-open"></i>';
+            btnLock.title = this.rotationLocked
+                ? '지도 회전 잠김 (눌러서 회전 허용)'
+                : '지도 회전 허용 중 (눌러서 회전 잠금)';
+        };
+
+        this.map.on('rotate', refreshCompass);
+
+        // 나침반: 누르면 북쪽이 위로 오도록 복귀
+        btnCompass.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this.resetMapBearing();
+        });
+
+        // 잠금: 두 손가락 회전 허용/차단 전환 (설정은 이 기기에 저장)
+        btnLock.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this.setRotationLocked(!this.rotationLocked);
+            refreshLock();
+        });
+
+        refreshCompass();
+        refreshLock();
+    }
+
+    resetMapBearing() {
+        if (!this.map || !this.rotateAvailable || typeof this.map.setBearing !== 'function') return;
+        const start = this.map.getBearing();
+        let delta = -(((start + 180) % 360 + 360) % 360 - 180);
+        if (Math.abs(delta) < 0.1) {
+            this.map.setBearing(0);
+            return;
+        }
+        // 짧게(0.3초) 부드럽게 북쪽으로 복귀
+        const t0 = performance.now();
+        const dur = 300;
+        const step = (now) => {
+            const k = Math.min(1, (now - t0) / dur);
+            const ease = 1 - Math.pow(1 - k, 3);
+            this.map.setBearing(start + delta * ease);
+            if (k < 1) requestAnimationFrame(step);
+            else this.map.setBearing(0);
+        };
+        requestAnimationFrame(step);
+    }
+
+    setRotationLocked(locked) {
+        if (!this.map || !this.rotateAvailable) return;
+        this.rotationLocked = !!locked;
+        try { localStorage.setItem('gis_rotation_locked', this.rotationLocked ? '1' : '0'); } catch (e) {}
+        if (this.map.touchRotate) {
+            if (this.rotationLocked) this.map.touchRotate.disable();
+            else this.map.touchRotate.enable();
+        }
+    }
+
+    /**
      * VWorld 지도 초기화
      */
     initMap() {
         const center = [35.2305, 128.8845]; // 김해시청-부원동 중심
-        this.map = L.map(this.containerId, {
+
+        // 모바일(터치 기기) 전용 지도 회전: index.html 에서 모바일일 때만 leaflet-rotate 를 불러옴
+        // PC 에서는 플러그인을 불러오지 않으므로 기존 동작과 100% 동일
+        const rotateAvailable = !!window.GIS_ROTATE_ENABLED && typeof L.Map.prototype.setBearing === 'function';
+        this.rotateAvailable = rotateAvailable;
+        this.rotationLocked = false;
+        if (rotateAvailable) {
+            try { this.rotationLocked = localStorage.getItem('gis_rotation_locked') === '1'; } catch (e) {}
+        }
+
+        const mapOptions = {
             center: center,
             zoom: 15,
             minZoom: 9,
@@ -2088,9 +2304,25 @@ class WaterMapManager {
             zoomControl: false,
             wheelDebounceTime: 60,
             wheelPxPerZoomLevel: 90
-        });
+        };
+        if (rotateAvailable) {
+            Object.assign(mapOptions, {
+                rotate: true,
+                bearing: 0,
+                touchRotate: !this.rotationLocked,
+                rotateControl: false,   // 기본 나침반 대신 전용 버튼 사용
+                shiftKeyRotate: false,
+                compassBearing: false
+            });
+        }
+        this.map = L.map(this.containerId, mapOptions);
 
         L.control.zoom({ position: 'bottomright' }).addTo(this.map);
+
+        if (rotateAvailable) {
+            this._initRotationGestureThreshold();
+            this._initRotationControls();
+        }
 
         // 1. 국토교통부 VWorld 2D 표준 배경지도 타일 (네이티브 19레벨 타일을 22까지 매끄럽게 고화질 확대)
         const vworldBase = L.tileLayer('https://xdworld.vworld.kr/2d/Base/service/{z}/{x}/{y}.png', {

@@ -23,7 +23,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1"></script>
     <!-- 커스텀 스타일 -->
-    <link rel="stylesheet" href="css/style.css?v=20261128A">
+    <link rel="stylesheet" href="css/style.css?v=20261128B">
 </head>
 <body>
 
@@ -1202,6 +1202,19 @@
             <button type="button" id="btnMapCurrentLocation" class="btn-map-location-fab" title="내 현재 위치로 지도 이동">
                 <i class="fa-solid fa-location-crosshairs"></i>
             </button>
+
+            <!-- 모바일 전용: 지도 회전 나침반(북쪽 복귀) + 회전 잠금 버튼 (PC 에서는 숨김) -->
+            <div id="mapRotateControls" class="map-rotate-controls" style="display:none;">
+                <button type="button" id="btnMapCompass" class="btn-map-rotate-fab" title="북쪽이 위로 오게 되돌리기">
+                    <span id="mapCompassNeedle" class="map-compass-needle">
+                        <span class="needle-n">N</span>
+                        <i class="fa-solid fa-caret-up"></i>
+                    </span>
+                </button>
+                <button type="button" id="btnMapRotateLock" class="btn-map-rotate-fab" title="지도 회전 허용 중 (눌러서 회전 잠금)">
+                    <i class="fa-solid fa-lock-open"></i>
+                </button>
+            </div>
 
             <!-- GIS 공간데이터 초고속 비동기 로딩 프로그레스 인디케이터 오버레이 -->
             <div id="gisLoadingOverlay" class="gis-loading-overlay" style="display:none;">
@@ -3271,6 +3284,24 @@
 <!-- Leaflet GIS JS -->
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 
+<!-- 모바일(터치 기기) 전용 지도 회전 플러그인: PC 에서는 불러오지 않아 기존 동작 그대로 유지 -->
+<script>
+    window.GIS_ROTATE_ENABLED = (function () {
+        try {
+            var ua = navigator.userAgent || '';
+            var mobileUa = /Android|iPhone|iPad|iPod|Mobile/i.test(ua);
+            var coarseTouch = (navigator.maxTouchPoints || 0) > 1 &&
+                window.matchMedia && window.matchMedia('(hover: none) and (pointer: coarse)').matches;
+            return mobileUa || coarseTouch;
+        } catch (e) {
+            return false;
+        }
+    })();
+    if (window.GIS_ROTATE_ENABLED) {
+        document.write('<script src="https://cdn.jsdelivr.net/npm/leaflet-rotate@0.2.8/dist/leaflet-rotate.js" integrity="sha384-MtIdllebpZyms2pw9K3YJl8BEqrKNQCdSFAySjeglab6z2PkeFdF4Lb9cDsnxQuG" crossorigin="anonymous"><\/script>');
+    }
+</script>
+
 <!-- 비즈니스 모듈 스크립트 -->
 <script src="js/topologyData.js?v=20261112f"></script>
 <script src="js/topologyCanvas.js?v=20261117C"></script>
@@ -3280,7 +3311,7 @@
 <script src="js/offlineStore.js?v=20261112f"></script>
 <!-- 김해시 실제 관망 GIS 공간데이터셋 (WGS84 변환) -->
 <script src="data/gimhae_gis_dataset.js?v=20261117B"></script>
-<script src="js/map.js?v=20261128C"></script>
+<script src="js/map.js?v=20261128D"></script>
 <!-- 수용가 부과량 데이터 (file:// 환경 CORS 차단 방지 및 고속 로드) -->
 <script defer src="data/consumer_charge_data.js"></script>
 <!-- 1. 유량 및 유수율 관리(수정작업) 100% 검증 기준 데이터셋 -->
