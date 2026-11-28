@@ -9034,6 +9034,68 @@ body.theme-navy .btn-vvp-clear-icon:hover {
     color: #0F172A;
 }
 
+/* ── 휴대폰: 로드뷰 도구줄을 아이콘 한 줄로 줄여 로드뷰를 크게 표시 ── */
+@media (max-width: 768px) {
+    .rv-dock-header {
+        padding: 4px 6px;
+        gap: 4px;
+        flex-wrap: nowrap;
+    }
+
+    .rv-dock-tabs {
+        padding: 2px;
+        gap: 2px;
+    }
+
+    .rv-dock-tab {
+        padding: 6px 12px;
+        font-size: 16px;
+        min-width: 40px;
+    }
+
+    .rv-dock-actions {
+        gap: 4px;
+    }
+
+    .btn-rv-dock-action {
+        padding: 6px 10px;
+        font-size: 15px;
+        min-width: 38px;
+        justify-content: center;
+    }
+
+    /* 아이콘만 표시 (글자는 버튼 title 로 안내) */
+    .rv-dock-tab .rv-btn-label,
+    .btn-rv-dock-action .rv-btn-label {
+        display: none;
+    }
+
+    .rv-dock-info-bar {
+        padding: 3px 8px;
+        gap: 10px;
+        font-size: 11px;
+    }
+
+    /* GPS 좌표는 휴대폰에서 생략 (도로명·지번만) */
+    .rv-dock-info-bar .rv-dock-info-item:nth-child(3) {
+        display: none;
+    }
+
+    /* 패널이 열려 있을 때 지도 버튼이 로드뷰·패널을 가리지 않도록 패널 위로 이동 */
+    .main-content.side-panel-open .btn-map-location-fab {
+        bottom: calc(60% + 12px);
+    }
+
+    .main-content.side-panel-open .map-rotate-controls {
+        bottom: calc(60% + 60px);
+    }
+
+    /* 패널에 닫기(✕) 버튼이 있으므로 패널이 열리면 떠 있는 '패널 닫기' 버튼은 숨김 */
+    .main-content.side-panel-open .btn-floating-side-panel {
+        display: none !important;
+    }
+}
+
 /* 도킹 로드뷰 뷰어 프레임 (마우스 상하 드래그로 높이 조절 가능, 하단 미니맵 클리핑) */
 .rv-dock-viewer-container {
     height: 280px;

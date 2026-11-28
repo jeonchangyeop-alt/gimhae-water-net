@@ -4651,7 +4651,47 @@ async function renderFacilityList(searchTerm = '') {
 /**
  * 시설물 선택 시
  */
+/**
+ * 오른쪽(휴대폰: 아래) 패널 제목에 선택한 대상의 레이어명을 표시
+ * mode: 'roadview' (로드뷰 열림), 'restore' (로드뷰 닫힘 → 직전 제목 복원)
+ */
+const PANEL_DEFAULT_TITLE = '관망 DB 및 현장 정보';
+function getLayerTitleForItem(item) {
+    if (!item) return PANEL_DEFAULT_TITLE;
+    const id = String(item.id || '');
+    if (/^LM2-/.test(id)) return '상수관로(LM2)';
+    if (/^LM-/.test(id)) return '상수관로(LM)';
+    if (/^SP-/.test(id)) return '급수관로';
+    if (/^VLV-/.test(id) || item.facilityType === 'VALVE') return item.cat ? `밸브류 · ${item.cat}` : '밸브류';
+    if (/^BIL-/.test(id) || item.facilityType === 'CONSUMER') return '부과 수용가';
+    if (/^RES-/.test(id) || item.facilityType === 'RESERVOIR') return '정수장·배수지';
+    if (/^BST-/.test(id) || item.facilityType === 'BOOSTER') return '가압장';
+    if (/^FLOW-/.test(id) || item.facilityType === 'FLOW_METER') return '유량계';
+    if (/^BLK-/.test(id) || item.isBlock || item.facilityType === 'BLOCK') return '블록경계';
+    if (item.facilityType === 'METER') return '계량기';
+    if (item.facilityType === 'PIPE') return '상수관로';
+    if (item.addrSource || item.source === '주소 확인') return '위치 확인';
+    if (item.category) return item.category;
+    return PANEL_DEFAULT_TITLE;
+}
+window.setSidePanelTitle = function (item, mode) {
+    const el = document.getElementById('sidePanelMainTitle');
+    if (!el) return;
+    if (mode === 'roadview') {
+        el.textContent = '로드뷰';
+        return;
+    }
+    if (mode === 'restore') {
+        el.textContent = window._lastPanelTitle || PANEL_DEFAULT_TITLE;
+        return;
+    }
+    const t = getLayerTitleForItem(item);
+    window._lastPanelTitle = t;
+    el.textContent = t;
+};
+
 async function onFacilitySelected(facility) {
+    window.setSidePanelTitle(facility);
     currentFacility = facility;
     currentPhotos = [];
     isEditMode = false;
@@ -4676,6 +4716,7 @@ async function onFacilitySelected(facility) {
  * 지도 시설물, 블록, 가압장, 배수지, 주소 선택 시 우측 칸(Side Panel)에 상세 DB 표출
  */
 window.showLocationOnRightPanel = function(item, nearbySummary, matchedBlock) {
+    window.setSidePanelTitle(item);
     currentFacility = item;
     openSidePanel();
     switchTab('surveyTab');

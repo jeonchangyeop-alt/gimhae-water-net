@@ -6209,6 +6209,37 @@ const blkFld = (this.labelFields && this.labelFields.blocks) || 'name';
         return this._isTouchDevice();
     }
 
+    _isMobileLayout() {
+        return window.innerWidth <= 768;
+    }
+
+    /**
+     * 휴대폰 화면: 로드뷰 칸 높이를 패널의 남은 공간에 맞춰 최대로 키움
+     */
+    _fitMobileRoadview() {
+        if (!this._isMobileLayout()) return;
+        const dock = document.getElementById('roadviewDockPane');
+        const vc = document.getElementById('rvDockViewerContainer');
+        const sp = document.getElementById('sidePanel');
+        if (!dock || !vc || !sp || dock.style.display === 'none') return;
+        // 패널 안에서 스크롤되는 영역 찾기
+        let sc = dock.parentElement;
+        while (sc && sc !== sp) {
+            const oy = getComputedStyle(sc).overflowY;
+            if (oy === 'auto' || oy === 'scroll') break;
+            sc = sc.parentElement;
+        }
+        if (!sc || sc === sp) sc = null;
+        const headerH = vc.getBoundingClientRect().top - dock.getBoundingClientRect().top;
+        const areaH = sc ? sc.clientHeight : (sp.getBoundingClientRect().bottom - dock.getBoundingClientRect().top);
+        const h = Math.max(220, Math.round(areaH - headerH - 12));
+        vc.style.height = h + 'px';
+        if (sc) sc.scrollTop += dock.getBoundingClientRect().top - sc.getBoundingClientRect().top - 4;
+        if (this.kakaoRoadview) {
+            requestAnimationFrame(() => { try { this.kakaoRoadview.relayout(); } catch (e) {} });
+        }
+    }
+
     _isTouchDevice() {
         if (window.GIS_ROTATE_ENABLED) return true;
         return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '');
@@ -6277,11 +6308,18 @@ const blkFld = (this.labelFields && this.labelFields.blocks) || 'name';
             window.switchTab('surveyTab');
         }
 
+        if (typeof window.setSidePanelTitle === 'function') window.setSidePanelTitle(null, 'roadview');
+
         const dockPane = document.getElementById('roadviewDockPane');
         if (dockPane) {
             dockPane.style.display = 'flex';
             setTimeout(() => {
-                dockPane.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                if (this._isMobileLayout()) {
+                    // 휴대폰: 로드뷰가 패널 남은 높이를 꽉 채우도록 맞춤
+                    this._fitMobileRoadview();
+                } else {
+                    dockPane.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                }
             }, 80);
         }
         const splitResizer = document.getElementById('rvSplitResizer');
@@ -6513,7 +6551,7 @@ const blkFld = (this.labelFields && this.labelFields.blocks) || 'name';
         const btnDockPipe = document.getElementById('btnRvDockTogglePipe');
         if (btnDockPipe) {
             btnDockPipe.classList.toggle('active', this.roadviewState.isPipeOverlayOn);
-            btnDockPipe.innerHTML = `<i class="fa-solid fa-water"></i> 관로표현 ${this.roadviewState.isPipeOverlayOn ? '<span style="font-size:10px; background:#22C55E; color:#FFF; padding:1px 4px; border-radius:4px; margin-left:3px;">ON</span>' : ''}`;
+            btnDockPipe.innerHTML = `<i class="fa-solid fa-water"></i> <span class="rv-btn-label">관로표현</span> ${this.roadviewState.isPipeOverlayOn ? '<span style="font-size:10px; background:#22C55E; color:#FFF; padding:1px 4px; border-radius:4px; margin-left:3px;">ON</span>' : ''}`;
         }
     }
 
@@ -6763,6 +6801,7 @@ const blkFld = (this.labelFields && this.labelFields.blocks) || 'name';
 
         const sidePanel = document.getElementById('sidePanel');
         if (sidePanel) sidePanel.classList.remove('roadview-docked-mode');
+        if (typeof window.setSidePanelTitle === 'function') window.setSidePanelTitle(null, 'restore');
 
         const frameKakao = document.getElementById('rvDockIframeKakao');
         const frameNaver = document.getElementById('rvDockIframeNaver');
@@ -6795,7 +6834,7 @@ const blkFld = (this.labelFields && this.labelFields.blocks) || 'name';
         const btnDockPipe = document.getElementById('btnRvDockTogglePipe');
         if (btnDockPipe) {
             btnDockPipe.classList.toggle('active', nextState);
-            btnDockPipe.innerHTML = `<i class="fa-solid fa-water"></i> 관로표현 ${nextState ? '<span style="font-size:10px; background:#22C55E; color:#FFF; padding:1px 4px; border-radius:4px; margin-left:3px;">ON</span>' : ''}`;
+            btnDockPipe.innerHTML = `<i class="fa-solid fa-water"></i> <span class="rv-btn-label">관로표현</span> ${nextState ? '<span style="font-size:10px; background:#22C55E; color:#FFF; padding:1px 4px; border-radius:4px; margin-left:3px;">ON</span>' : ''}`;
         }
     }
 

@@ -23,7 +23,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1"></script>
     <!-- 커스텀 스타일 -->
-    <link rel="stylesheet" href="css/style.css?v=20261128L">
+    <link rel="stylesheet" href="css/style.css?v=20261129B">
 </head>
 <body>
 
@@ -2113,16 +2113,16 @@
                             <div class="rv-dock-header">
                                 <!-- 카카오 vs 네이버 전환 탭 -->
                                 <div class="rv-dock-tabs" id="rvDockTabGroup">
-                                    <button type="button" class="rv-dock-tab active" id="btnRvDockTabKakao">
-                                        <i class="fa-solid fa-street-view" style="color:#F59E0B;"></i> 카카오 로드뷰
+                                    <button type="button" class="rv-dock-tab active" id="btnRvDockTabKakao" title="카카오 로드뷰">
+                                        <i class="fa-solid fa-street-view" style="color:#F59E0B;"></i> <span class="rv-btn-label">카카오 로드뷰</span>
                                     </button>
-                                    <button type="button" class="rv-dock-tab" id="btnRvDockTabNaver">
-                                        <i class="fa-solid fa-road" style="color:#10B981;"></i> 네이버 거리뷰
+                                    <button type="button" class="rv-dock-tab" id="btnRvDockTabNaver" title="네이버 거리뷰">
+                                        <i class="fa-solid fa-road" style="color:#10B981;"></i> <span class="rv-btn-label">네이버 거리뷰</span>
                                     </button>
                                 </div>
                                 <div class="rv-dock-actions">
-                                    <button type="button" class="btn-rv-dock-action btn-rv-pipe-btn" id="btnRvDockTogglePipe" title="도로 지하 상수관망 AR 투영도 ON/OFF">
-                                        <i class="fa-solid fa-water"></i> 관로표현
+                                    <button type="button" class="btn-rv-dock-action btn-rv-pipe-btn" id="btnRvDockTogglePipe" title="도로 지하 상수관망 AR 투영도 ON/OFF (관로표현)">
+                                        <i class="fa-solid fa-water"></i> <span class="rv-btn-label">관로표현</span>
                                     </button>
                                     <button type="button" class="btn-rv-dock-action" id="btnRvDockOpenNewTab" title="새 탭으로 크게 보기">
                                         <i class="fa-solid fa-arrow-up-right-from-square"></i>
@@ -3326,7 +3326,7 @@
 <script src="js/offlineStore.js?v=20261112f"></script>
 <!-- 김해시 실제 관망 GIS 공간데이터셋 (WGS84 변환) -->
 <script src="data/gimhae_gis_dataset.js?v=20261128G"></script>
-<script src="js/map.js?v=20261129A"></script>
+<script src="js/map.js?v=20261129B"></script>
 <!-- 수용가 부과량 데이터 (file:// 환경 CORS 차단 방지 및 고속 로드) -->
 <script defer src="data/consumer_charge_data.js"></script>
 <!-- 1. 유량 및 유수율 관리(수정작업) 100% 검증 기준 데이터셋 -->
@@ -3336,7 +3336,7 @@
 <script src="js/targetManager.js?v=20261121C"></script>
 <!-- 9. 기준 및 근거 AI 어시스턴트 (노트북LM Grounded Engine) -->
 <script src="js/standardsLm.js?v=20261113Q"></script>
-<script src="js/app.js?v=20261129A"></script>
+<script src="js/app.js?v=20261129B"></script>
 
 <script>
     // 카카오톡 인앱 브라우저 감지 시 안내 및 크롬 전환
