@@ -4745,7 +4745,8 @@ window.showLocationOnRightPanel = function(item, nearbySummary, matchedBlock) {
     if (!landmark && item.name && item.name !== cleanRoad) {
         landmark = item.name.replace(/\s*인근\s*\([^)]*\)/g, '').replace(/\s*\([^)]*m\)/g, '').trim();
     }
-    if (!landmark && window.mapManager && typeof window.mapManager.findNearestIndexItem === 'function') {
+    // 지도에서 고른 주소 확인(addrSource)은 정확한 주소가 따로 표시되므로 주변 지명으로 건물명을 추정하지 않음
+    if (!landmark && !item.addrSource && window.mapManager && typeof window.mapManager.findNearestIndexItem === 'function') {
         const nearest = window.mapManager.findNearestIndexItem(lat, lng);
         if (nearest) {
             const dist = window.mapManager.calculateDistance(lat, lng, nearest.lat, nearest.lng);
@@ -4848,10 +4849,49 @@ window.showLocationOnRightPanel = function(item, nearbySummary, matchedBlock) {
                 <span class="attr-label">목표 유수율</span>
                 <span class="attr-value font-bold text-primary">${item.blockData.target}%</span>
             </div>` : ''}
+            ${(item.addrSource || isAddressOnly) && (cleanRoad || cleanParcel) ? (() => {
+                const esc = (s) => String(s || '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+                const jsq = (s) => String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                const acc = item.addrAccuracy;
+                const accText = acc === 'exact' ? `선택 지점의 정확한 주소 (${item.addrSource || '주소 변환'})` :
+                    (acc === 'high' || acc === 'near') ? `선택 지점에서 ${item.addrDistance}m 떨어진 가장 가까운 건물 주소 (김해 주소대장)` :
+                    acc === 'approx' ? `대략 위치 · 주요 지명 기준 ${item.addrDistance}m` : (item.addrSource || '');
+                const accColor = acc === 'exact' || acc === 'high' ? '#15803D' : (acc === 'near' ? '#B45309' : '#B91C1C');
+                const copyBtn = (txt, label) => `<button type="button" onclick="window.mapManager.copyTextToClipboard('${jsq(txt)}', '${label}')" title="${label} 복사" style="flex-shrink:0; padding:4px 8px; font-size:11px; border:1px solid #CBD5E1; background:#FFF; color:#475569; border-radius:6px; cursor:pointer;"><i class="fa-regular fa-copy"></i> 복사</button>`;
+                return `
+            <div class="attr-item" style="grid-column: span 2; background:#EFF6FF; border:1px solid #BFDBFE; border-radius:8px; padding:9px 10px; gap:6px;">
+                ${cleanRoad ? `
+                <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
+                    <div style="min-width:0;">
+                        <span class="attr-label" style="color:#1D4ED8; font-weight:700;"><i class="fa-solid fa-road"></i> 도로명 주소</span>
+                        <div style="font-size:14px; font-weight:800; color:#0F172A; word-break:keep-all; line-height:1.4;">${esc(cleanRoad)}</div>
+                    </div>
+                    ${copyBtn(cleanRoad, '도로명 주소')}
+                </div>` : ''}
+                ${cleanParcel ? `
+                <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px; margin-top:4px;">
+                    <div style="min-width:0;">
+                        <span class="attr-label" style="color:#475569; font-weight:700;"><i class="fa-regular fa-map"></i> 지번 주소</span>
+                        <div style="font-size:13px; font-weight:700; color:#334155; word-break:keep-all; line-height:1.4;">${esc(cleanParcel)}</div>
+                    </div>
+                    ${copyBtn(cleanParcel, '지번 주소')}
+                </div>` : ''}
+                ${item.addrNearRoad ? `
+                <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px; margin-top:4px;">
+                    <div style="min-width:0;">
+                        <span class="attr-label" style="color:#475569; font-weight:700;"><i class="fa-solid fa-building"></i> 가장 가까운 건물 (${item.addrNearDist}m)</span>
+                        <div style="font-size:13px; font-weight:700; color:#334155; word-break:keep-all; line-height:1.4;">${esc(item.addrNearRoad)}</div>
+                    </div>
+                    ${copyBtn(item.addrNearRoad, '건물 도로명 주소')}
+                </div>` : ''}
+                ${accText ? `<div style="margin-top:4px; font-size:11.5px; font-weight:600; color:${accColor};"><i class="fa-solid fa-circle-info"></i> ${esc(accText)}</div>` : ''}
+                <div style="font-size:11px; color:#64748B;"><i class="fa-solid fa-crosshairs"></i> ${lat.toFixed(6)}, ${lng.toFixed(6)}</div>
+            </div>`;
+            })() : `
             <div class="attr-item" style="grid-column: span 2;">
                 <span class="attr-label">도로명 / 지번 주소</span>
                 <span class="attr-value">${cleanRoad || cleanParcel || cleanTitle}</span>
-            </div>
+            </div>`}
         </div>
 
         ${!isAddressOnly && nearbySummary ? `

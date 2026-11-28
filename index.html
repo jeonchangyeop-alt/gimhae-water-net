@@ -23,7 +23,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1"></script>
     <!-- 커스텀 스타일 -->
-    <link rel="stylesheet" href="css/style.css?v=20261128B">
+    <link rel="stylesheet" href="css/style.css?v=20261128L">
 </head>
 <body>
 
@@ -2051,6 +2051,8 @@
                     <i class="fa-solid fa-crosshairs"></i>
                     <span id="mcmCoordText">35.228512, 128.889345</span>
                 </div>
+                <!-- 꾹 누른 지점의 주소 (도로명 / 지번 / 정확도) -->
+                <div class="mcm-addr-box" id="mcmAddrBox"></div>
                 <button type="button" class="mcm-item" id="mcmBtnSearchAddress">
                     <i class="fa-solid fa-magnifying-glass-location" style="color:#2563EB;"></i>
                     <strong class="mcm-simple-label">위치확인</strong>
@@ -2153,6 +2155,19 @@
                                 <div id="rvNativeRoadview" class="rv-native-roadview" style="width:100%; height:100%; display:none;"></div>
                                 <iframe id="rvDockIframeKakao" class="rv-dock-frame" src="" frameborder="0" allowfullscreen allow="geolocation"></iframe>
                                 <iframe id="rvDockIframeNaver" class="rv-dock-frame" src="" frameborder="0" allowfullscreen allow="geolocation" style="display:none;"></iframe>
+
+                                <!-- 휴대폰 전용: 카카오·네이버 로드뷰는 앱 안 화면(iframe)에 넣을 수 없어 앱/새 창으로 열기 -->
+                                <div id="rvMobileLauncher" class="rv-mobile-launcher" style="display:none;">
+                                    <div class="rvm-icon"><i class="fa-solid fa-street-view"></i></div>
+                                    <div class="rvm-title">휴대폰에서는 로드뷰를 지도 앱에서 엽니다</div>
+                                    <div class="rvm-desc">아래 버튼을 누르면 선택한 위치의 로드뷰가 열립니다.<br>카카오맵 앱이 없으면 설치 안내가 나옵니다.</div>
+                                    <a id="btnRvMobileKakao" class="rvm-btn rvm-kakao" href="#" target="_blank" rel="noopener">
+                                        <i class="fa-solid fa-street-view"></i> 카카오맵 로드뷰 열기
+                                    </a>
+                                    <a id="btnRvMobileNaver" class="rvm-btn rvm-naver" href="#" target="_blank" rel="noopener">
+                                        <i class="fa-solid fa-road"></i> 네이버 거리뷰 열기
+                                    </a>
+                                </div>
 
                                 <!-- 도킹용 AR 지하 관로 오버레이 -->
                                 <div class="roadview-pipe-overlay" id="rvDockPipeOverlay" style="display:none;">
@@ -3311,7 +3326,7 @@
 <script src="js/offlineStore.js?v=20261112f"></script>
 <!-- 김해시 실제 관망 GIS 공간데이터셋 (WGS84 변환) -->
 <script src="data/gimhae_gis_dataset.js?v=20261128G"></script>
-<script src="js/map.js?v=20261128K"></script>
+<script src="js/map.js?v=20261129A"></script>
 <!-- 수용가 부과량 데이터 (file:// 환경 CORS 차단 방지 및 고속 로드) -->
 <script defer src="data/consumer_charge_data.js"></script>
 <!-- 1. 유량 및 유수율 관리(수정작업) 100% 검증 기준 데이터셋 -->
@@ -3321,7 +3336,7 @@
 <script src="js/targetManager.js?v=20261121C"></script>
 <!-- 9. 기준 및 근거 AI 어시스턴트 (노트북LM Grounded Engine) -->
 <script src="js/standardsLm.js?v=20261113Q"></script>
-<script src="js/app.js?v=20261122E"></script>
+<script src="js/app.js?v=20261129A"></script>
 
 <script>
     // 카카오톡 인앱 브라우저 감지 시 안내 및 크롬 전환

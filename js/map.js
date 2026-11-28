@@ -2188,6 +2188,8 @@ class WaterMapManager {
 
         // VWorld API 인증키 (기본 공용 데모키 또는 로컬스토리지 저장키)
         this.defaultVworldKey = "767B4665-E5A7-3532-8419-5E9B5614F98E";
+        // 카카오 지도 JavaScript 키: 로드뷰(앱 화면 안 표시) + 좌표→주소 변환에 사용
+        this.defaultKakaoKey = "1d0c77fc7d05002c86b2776bf2ef7366";
         this.vworldApiKey = localStorage.getItem('vworld_api_key') || this.defaultVworldKey;
         this.verifiedMarker = null;
         this.verifiedCircle = null;
@@ -5887,8 +5889,12 @@ const blkFld = (this.labelFields && this.labelFields.blocks) || 'name';
             targetZoom = 18;
         }
 
-        // 지도 부드럽게 비행 이동
-        this.map.flyTo([lat, lng], targetZoom, { duration: 1.0 });
+        // 지도 부드럽게 비행 이동 (지도에서 직접 고른 위치는 현재 확대 수준을 유지)
+        if (item.source === '주소 확인') {
+            this.map.setView([lat, lng], Math.max(this.map.getZoom(), 17), { animate: true });
+        } else {
+            this.map.flyTo([lat, lng], targetZoom, { duration: 1.0 });
+        }
 
         // 1. 펄스 애니메이션 확인 핀 마커 생성
         const pinHtml = `
@@ -5964,6 +5970,37 @@ const blkFld = (this.labelFields && this.labelFields.blocks) || 'name';
             coordText.textContent = `${e.latlng.lat.toFixed(6)}, ${e.latlng.lng.toFixed(6)}`;
         }
 
+        // 꾹 누른(우클릭한) 지점의 주소를 메뉴 상단에 바로 표시
+        // (김해 주소대장 가장 가까운 건물 주소를 즉시 표시 → VWorld 주소가 오면 교체)
+        const addrBox = document.getElementById('mcmAddrBox');
+        if (addrBox) {
+            const reqId = (this._mcmAddrReq = (this._mcmAddrReq || 0) + 1);
+            const lat = e.latlng.lat, lng = e.latlng.lng;
+            const render = (a) => {
+                if (reqId !== this._mcmAddrReq) return;
+                const esc = (s) => String(s || '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+                if (!a || (!a.road && !a.parcel)) {
+                    addrBox.innerHTML = `<div class="mcm-addr-main">주소 정보 없음</div>`;
+                    return;
+                }
+                const accText = a.accuracy === 'exact' ? '정확한 주소' :
+                    (a.accuracy === 'high' ? `인근 건물 ${a.distance}m` :
+                        (a.accuracy === 'near' ? `인근 건물 ${a.distance}m` : `대략 ${a.distance}m`));
+                addrBox.innerHTML =
+                    `<div class="mcm-addr-main">${esc(a.road || a.parcel)}</div>` +
+                    (a.road && a.parcel ? `<div class="mcm-addr-sub">지번 ${esc(a.parcel)}</div>` : '') +
+                    (a.nearRoad ? `<div class="mcm-addr-sub">인근 건물 ${esc(a.nearRoad)} (${a.nearDist}m)</div>` : '') +
+                    `<div class="mcm-addr-acc acc-${a.accuracy}">${esc(accText)}</div>`;
+            };
+            const quick = this.findNearestBillingAddress(lat, lng, 60);
+            if (quick) {
+                render({ road: quick.road, parcel: quick.parcel, accuracy: quick.distance <= 20 ? 'high' : 'near', distance: quick.distance });
+            } else {
+                addrBox.innerHTML = `<div class="mcm-addr-main" style="color:#64748B;">주소 확인 중…</div>`;
+            }
+            this.resolveAddressAt(lat, lng).then(render).catch(() => {});
+        }
+
         // 메뉴 위치 지정 (화면 밖 벗어남 방지)
         const container = document.getElementById('map');
         const rect = container ? container.getBoundingClientRect() : { width: window.innerWidth, height: window.innerHeight };
@@ -5971,7 +6008,7 @@ const blkFld = (this.labelFields && this.labelFields.blocks) || 'name';
         let y = e.containerPoint.y;
 
         if (x + 270 > rect.width) x = rect.width - 275;
-        if (y + 240 > rect.height) y = rect.height - 245;
+        if (y + 310 > rect.height) y = rect.height - 315;
 
         menu.style.left = `${Math.max(10, x)}px`;
         menu.style.top = `${Math.max(10, y)}px`;
@@ -6001,6 +6038,149 @@ const blkFld = (this.labelFields && this.labelFields.blocks) || 'name';
     }
 
     /**
+     * 김해 주소대장(부과 수용가 5.5만 건, 실제 건물 위치)에서 가장 가까운 건물 주소 조회
+     * - 공간 색인으로 반경 내 후보만 검사 (수 ms 이내)
+     * - 개인정보(수용가명·번호)는 사용하지 않고 주소만 반환
+     */
+    findNearestBillingAddress(lat, lng, maxDistM = 60) {
+        const gis = this.gisData || window.GIMHAE_GIS_DATA;
+        if (!gis || !Array.isArray(gis.billingConsumers)) return null;
+        const dLat = maxDistM / 111000;
+        const dLng = maxDistM / (111000 * Math.cos(lat * Math.PI / 180));
+        let cands;
+        if (this.spatialIndexBilling) {
+            cands = this.spatialIndexBilling.query(lat - dLat, lat + dLat, lng - dLng, lng + dLng, []);
+        } else {
+            cands = gis.billingConsumers.filter(b => Math.abs(b.lat - lat) <= dLat && Math.abs(b.lng - lng) <= dLng);
+        }
+        let best = null, bestD = maxDistM;
+        for (let i = 0; i < cands.length; i++) {
+            const b = cands[i];
+            if (!b.addr && !b.oaddr) continue;
+            const d = this.calculateDistance(lat, lng, b.lat, b.lng);
+            if (d <= bestD) { bestD = d; best = b; }
+        }
+        if (!best) return null;
+        const parcel = best.oaddr ? (/^경상남도|^김해시/.test(best.oaddr) ? best.oaddr : `김해시 ${best.oaddr}`) : '';
+        return { road: best.addr || '', parcel, block: best.blk || '', distance: Math.round(bestD) };
+    }
+
+    /**
+     * VWorld 역지오코딩(좌표 → 도로명·지번 주소). 등록된 키가 아니면 이번 접속 동안 다시 시도하지 않음
+     */
+    queryVWorldReverse(lat, lng) {
+        if (this._vworldAddrDisabled) return Promise.resolve(null);
+        const apiKey = this.vworldApiKey || this.defaultVworldKey;
+        if (!apiKey) return Promise.resolve(null);
+        return new Promise((resolve) => {
+            const cb = 'vworld_rev_' + Date.now() + '_' + Math.floor(Math.random() * 100000);
+            const script = document.createElement('script');
+            let done = false;
+            const finish = (val) => {
+                if (done) return;
+                done = true;
+                clearTimeout(timer);
+                try { delete window[cb]; } catch (e) {}
+                if (script.parentNode) script.parentNode.removeChild(script);
+                resolve(val);
+            };
+            const timer = setTimeout(() => finish(null), 2500);
+            window[cb] = (data) => {
+                try {
+                    const res = data && data.response;
+                    if (!res || res.status !== 'OK') {
+                        const code = res && res.error && res.error.code;
+                        if (code && /KEY|DOMAIN|AUTH/i.test(code)) this._vworldAddrDisabled = true;
+                        finish(null);
+                        return;
+                    }
+                    const out = { road: '', parcel: '', building: '' };
+                    (res.result || []).forEach(r => {
+                        if (r.type === 'road' && !out.road) {
+                            out.road = r.text || '';
+                            if (r.structure && r.structure.detail) out.building = r.structure.detail;
+                        } else if (r.type === 'parcel' && !out.parcel) {
+                            out.parcel = r.text || '';
+                        }
+                    });
+                    finish(out.road || out.parcel ? out : null);
+                } catch (e) {
+                    finish(null);
+                }
+            };
+            script.onerror = () => finish(null);
+            const domain = window.location.hostname || 'localhost';
+            script.src = `https://api.vworld.kr/req/address?service=address&request=getAddress&version=2.0&crs=EPSG:4326` +
+                `&point=${lng},${lat}&format=json&type=both&simple=false&key=${apiKey}&domain=${encodeURIComponent(domain)}&callback=${cb}`;
+            document.head.appendChild(script);
+        });
+    }
+
+    /**
+     * 선택 좌표의 가장 정확한 주소 조회
+     * 1) VWorld 역지오코딩 (유효한 키가 있을 때) → 2) 김해 주소대장 가장 가까운 건물 → 3) 주요 지명 색인
+     */
+    /**
+     * 카카오 좌표→주소 변환 (카카오 지도 SDK services). 선택 지점의 정확한 도로명·지번 주소
+     */
+    queryKakaoReverse(lat, lng) {
+        if (!this.kakaoGeocoder || !window.kakao || !kakao.maps || !kakao.maps.services) return Promise.resolve(null);
+        return new Promise((resolve) => {
+            let done = false;
+            const timer = setTimeout(() => { if (!done) { done = true; resolve(null); } }, 2500);
+            try {
+                this.kakaoGeocoder.coord2Address(lng, lat, (result, status) => {
+                    if (done) return;
+                    done = true;
+                    clearTimeout(timer);
+                    if (status !== kakao.maps.services.Status.OK || !result || !result[0]) { resolve(null); return; }
+                    const r = result[0];
+                    const road = r.road_address ? r.road_address.address_name : '';
+                    const parcel = r.address ? r.address.address_name : '';
+                    const building = r.road_address && r.road_address.building_name ? r.road_address.building_name : '';
+                    resolve(road || parcel ? { road, parcel, building } : null);
+                });
+            } catch (e) {
+                if (!done) { done = true; clearTimeout(timer); resolve(null); }
+            }
+        });
+    }
+
+    async resolveAddressAt(lat, lng) {
+        // 0) 카카오 좌표→주소 (정확)
+        const k = await this.queryKakaoReverse(lat, lng);
+        if (k) {
+            const out = { road: k.road, parcel: k.parcel, building: k.building, source: '카카오 주소', distance: 0, accuracy: 'exact' };
+            // 도로·공터처럼 도로명 주소가 없는 지점: 가장 가까운 건물의 도로명 주소를 참고로 함께 제공
+            if (!k.road) {
+                const nb = this.findNearestBillingAddress(lat, lng, 40);
+                if (nb && nb.road) { out.nearRoad = nb.road; out.nearDist = nb.distance; }
+            }
+            return out;
+        }
+        const v = await this.queryVWorldReverse(lat, lng);
+        if (v) {
+            return { road: v.road, parcel: v.parcel, building: v.building, source: 'VWorld 국가주소', distance: 0, accuracy: 'exact' };
+        }
+        const b = this.findNearestBillingAddress(lat, lng, 60);
+        if (b) {
+            return {
+                road: b.road, parcel: b.parcel, building: '', source: '김해 주소대장 (가장 가까운 건물)',
+                distance: b.distance, accuracy: b.distance <= 20 ? 'high' : 'near', block: b.block
+            };
+        }
+        const idx = this.findNearestIndexItem(lat, lng);
+        if (idx) {
+            const d = Math.round(this.calculateDistance(lat, lng, idx.lat, idx.lng));
+            return {
+                road: idx.road || idx.title || '', parcel: idx.parcel || '', building: idx.bldnm || '',
+                source: '주요 지명 기준 (대략 위치)', distance: d, accuracy: 'approx'
+            };
+        }
+        return { road: '', parcel: '', building: '', source: '', distance: null, accuracy: 'none' };
+    }
+
+    /**
      * 특정 좌표의 가장 가까운 색인 지명/주소 항목 조회
      */
     findNearestIndexItem(lat, lng) {
@@ -6019,6 +6199,38 @@ const blkFld = (this.labelFields && this.labelFields.blocks) || 'name';
     /**
      * 실시간 360° 로드뷰(거리뷰) 호출 (팝업 모달 없이 우측 결과창 패널에 즉시 표출)
      */
+    /**
+     * 휴대폰(터치 기기) 여부: 카카오·네이버 웹 로드뷰는 휴대폰에서 앱 연결 페이지로 넘어가
+     * 앱 화면 안(iframe)에 표시되지 않으므로, 이 경우 지도 앱/새 창으로 연다.
+     * (카카오 JS SDK 키가 설정된 경우에는 네이티브 로드뷰를 화면 안에 그대로 사용)
+     */
+    _useExternalRoadview() {
+        if (this.kakaoRoadview) return false;
+        return this._isTouchDevice();
+    }
+
+    _isTouchDevice() {
+        if (window.GIS_ROTATE_ENABLED) return true;
+        return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '');
+    }
+
+    /**
+     * 로드뷰 칸에 '지도 앱에서 열기' 안내 표시 (휴대폰에서 화면 안 표시가 불가능할 때)
+     */
+    _showRoadviewLauncher(kakaoUrl, naverUrl, message) {
+        const launcher = document.getElementById('rvMobileLauncher');
+        if (!launcher) return;
+        const aKakao = document.getElementById('btnRvMobileKakao');
+        const aNaver = document.getElementById('btnRvMobileNaver');
+        const desc = launcher.querySelector('.rvm-desc');
+        const title = launcher.querySelector('.rvm-title');
+        if (aKakao) aKakao.href = kakaoUrl;
+        if (aNaver) aNaver.href = naverUrl;
+        if (title) title.textContent = message ? '로드뷰를 지도 앱에서 열 수 있습니다' : '휴대폰에서는 로드뷰를 지도 앱에서 엽니다';
+        if (desc) desc.innerHTML = message || '아래 버튼을 누르면 선택한 위치의 로드뷰가 열립니다.<br>카카오맵 앱이 없으면 설치 안내가 나옵니다.';
+        launcher.style.display = 'flex';
+    }
+
     openRoadview(lat, lng, title) {
         this.hideContextMenu();
         this.setRoadviewMode(false);
@@ -6030,6 +6242,14 @@ const blkFld = (this.labelFields && this.labelFields.blocks) || 'name';
             console.error('[Roadview] 유효하지 않은 좌표:', lat, lng);
             alert('선택하신 위치의 GPS 좌표가 올바르지 않습니다.');
             return;
+        }
+
+        // 휴대폰: 사용자가 누른 순간(클릭 처리 중)에 카카오맵 로드뷰를 바로 연다 (앱 설치 시 앱으로 열림)
+        // 팝업이 차단되면 로드뷰 칸의 '카카오맵 로드뷰 열기' 버튼으로 열 수 있음
+        if (this._useExternalRoadview()) {
+            try {
+                window.open(`https://map.kakao.com/link/roadview/${latitude},${longitude}`, '_blank', 'noopener');
+            } catch (e) {}
         }
 
         const cleanTitle = (title || `김해시 관내 도로 (${latitude.toFixed(5)}, ${longitude.toFixed(5)})`)
@@ -6086,7 +6306,10 @@ const blkFld = (this.labelFields && this.labelFields.blocks) || 'name';
      * 카카오 Maps JavaScript SDK 동적 로딩 및 네이티브 로드뷰 초기화
      */
     initKakaoSdk() {
-        const kakaoAppKey = localStorage.getItem('kakao_appkey');
+        // 카카오 JavaScript 키 (웹 공개용 키, 등록된 도메인에서만 동작). 기기별 설정(localStorage)이 있으면 우선 사용
+        let kakaoAppKey = '';
+        try { kakaoAppKey = localStorage.getItem('kakao_appkey') || ''; } catch (e) {}
+        kakaoAppKey = kakaoAppKey || this.defaultKakaoKey;
         if (!kakaoAppKey) return;
 
         if (window.kakao && window.kakao.maps) {
@@ -6121,6 +6344,9 @@ const blkFld = (this.labelFields && this.labelFields.blocks) || 'name';
         try {
             this.kakaoRoadview = new kakao.maps.Roadview(container);
             this.kakaoRoadviewClient = new kakao.maps.RoadviewClient();
+            if (kakao.maps.services && kakao.maps.services.Geocoder) {
+                this.kakaoGeocoder = new kakao.maps.services.Geocoder();
+            }
 
             // 로드뷰 내 화살표 클릭 시 100% 실시간 위치 변경 이벤트 연동!
             kakao.maps.event.addListener(this.kakaoRoadview, 'position_changed', () => {
@@ -6134,6 +6360,10 @@ const blkFld = (this.labelFields && this.labelFields.blocks) || 'name';
                 this.updateRoadviewLiveMarkerHeading(vp.pan);
             });
             console.log('[Kakao SDK] 네이티브 Roadview 이벤트 리스너(position_changed) 등록 완료');
+            // SDK 로딩 전에 이미 로드뷰를 열었다면 앱 화면 안 로드뷰로 즉시 전환
+            if (this.roadviewState && this.roadviewState.isOpen) {
+                this.syncDockedRoadview();
+            }
         } catch (e) {
             console.warn('[Kakao SDK] Roadview 초기화 오류:', e);
         }
@@ -6154,12 +6384,14 @@ const blkFld = (this.labelFields && this.labelFields.blocks) || 'name';
         const parcelEl = document.getElementById('rvDockParcelAddr');
         const coordEl = document.getElementById('rvDockCoord');
         if (coordEl) coordEl.textContent = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
-        const nearest = this.findNearestIndexItem(lat, lng);
-        if (roadEl) roadEl.textContent = nearest?.road || this.roadviewState.title;
-        if (parcelEl) parcelEl.textContent = nearest?.parcel || nearest?.block || '-';
+        const nearBld = this.findNearestBillingAddress(lat, lng, 60);
+        const nearest = nearBld ? null : this.findNearestIndexItem(lat, lng);
+        const roadText = (nearBld && nearBld.road) || nearest?.road || this.roadviewState.title;
+        if (roadEl) roadEl.textContent = roadText;
+        if (parcelEl) parcelEl.textContent = (nearBld && nearBld.parcel) || nearest?.parcel || nearest?.block || '-';
 
         this.updatePipeTelemetryInfo(lat, lng);
-        this.showRoadviewLiveFeedback(`📍 ${nearest?.road || '도로'} 위치 이동 (지도 동기화)`);
+        this.showRoadviewLiveFeedback(`📍 ${roadText || '도로'} 위치 이동 (지도 동기화)`);
     }
 
     /**
@@ -6175,9 +6407,11 @@ const blkFld = (this.labelFields && this.labelFields.blocks) || 'name';
         const coordEl = document.getElementById('rvDockCoord');
 
         if (coordEl) coordEl.textContent = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
-        const nearest = this.findNearestIndexItem(lat, lng);
-        if (roadEl) roadEl.textContent = nearest?.road || title;
-        if (parcelEl) parcelEl.textContent = nearest?.parcel || nearest?.block || '-';
+        // 주소: 김해 주소대장의 가장 가까운 건물 주소 우선 (없으면 주요 지명)
+        const nearBld = this.findNearestBillingAddress(lat, lng, 60);
+        const nearest = nearBld ? null : this.findNearestIndexItem(lat, lng);
+        if (roadEl) roadEl.textContent = (nearBld && nearBld.road) || nearest?.road || title;
+        if (parcelEl) parcelEl.textContent = (nearBld && nearBld.parcel) || nearest?.parcel || nearest?.block || '-';
 
         const frameKakao = document.getElementById('rvDockIframeKakao');
         const nativeContainer = document.getElementById('rvNativeRoadview');
@@ -6185,21 +6419,47 @@ const blkFld = (this.labelFields && this.labelFields.blocks) || 'name';
         const btnTabKakao = document.getElementById('btnRvDockTabKakao');
         const btnTabNaver = document.getElementById('btnRvDockTabNaver');
         const btnOpenNewTab = document.getElementById('btnRvDockOpenNewTab');
+        const mobileLauncher = document.getElementById('rvMobileLauncher');
+
+        // 휴대폰: iframe 대신 앱/새 창 열기 안내 (검은 화면 방지)
+        if (this._useExternalRoadview()) {
+            if (nativeContainer) nativeContainer.style.display = 'none';
+            if (frameKakao) { frameKakao.style.display = 'none'; if (frameKakao.src) frameKakao.removeAttribute('src'); }
+            if (frameNaver) { frameNaver.style.display = 'none'; if (frameNaver.src) frameNaver.removeAttribute('src'); }
+            this._showRoadviewLauncher(kakaoUrl, naverUrl);
+            if (btnTabKakao) btnTabKakao.onclick = () => window.open(kakaoUrl, '_blank', 'noopener');
+            if (btnTabNaver) btnTabNaver.onclick = () => window.open(naverUrl, '_blank', 'noopener');
+            if (btnOpenNewTab) {
+                btnOpenNewTab.onclick = () => window.open(kakaoUrl, '_blank', 'noopener');
+                btnOpenNewTab.title = '카카오맵 로드뷰 열기';
+            }
+            return;
+        }
+        if (mobileLauncher) mobileLauncher.style.display = 'none';
 
         const switchDockTab = (tab) => {
             this.roadviewState.provider = tab;
             if (tab === 'kakao') {
                 if (this.kakaoRoadview) {
+                    // 카카오 SDK 로드뷰: 앱 화면 안에 바로 표시 (휴대폰·PC 공통)
                     if (nativeContainer) nativeContainer.style.display = 'block';
                     if (frameKakao) frameKakao.style.display = 'none';
+                    if (mobileLauncher) mobileLauncher.style.display = 'none';
                     const pos = new kakao.maps.LatLng(lat, lng);
                     this.kakaoRoadviewClient.getNearestPanoId(pos, 80, (panoId) => {
                         if (panoId) {
                             this.kakaoRoadview.setPanoId(panoId, pos);
-                        } else if (frameKakao) {
+                            // 숨겨져 있던 컨테이너가 보이게 된 뒤 크기 재계산
+                            requestAnimationFrame(() => { try { this.kakaoRoadview.relayout(); } catch (e) {} });
+                        } else {
                             if (nativeContainer) nativeContainer.style.display = 'none';
-                            frameKakao.style.display = 'block';
-                            if (frameKakao.src !== kakaoUrl) frameKakao.src = kakaoUrl;
+                            if (this._isTouchDevice()) {
+                                // 휴대폰: 웹 로드뷰는 화면 안에 안 뜨므로 안내 + 앱 열기 버튼
+                                this._showRoadviewLauncher(kakaoUrl, naverUrl, '선택한 위치 80m 안에 카카오 로드뷰 사진이 없습니다.<br>다른 도로 위치를 눌러 보세요.');
+                            } else if (frameKakao) {
+                                frameKakao.style.display = 'block';
+                                if (frameKakao.src !== kakaoUrl) frameKakao.src = kakaoUrl;
+                            }
                         }
                     });
                 } else {
@@ -6219,7 +6479,15 @@ const blkFld = (this.labelFields && this.labelFields.blocks) || 'name';
             } else {
                 if (nativeContainer) nativeContainer.style.display = 'none';
                 if (frameKakao) frameKakao.style.display = 'none';
-                if (frameNaver) frameNaver.style.display = 'block';
+                if (this._isTouchDevice()) {
+                    // 휴대폰: 네이버 거리뷰는 화면 안에 넣을 수 없어 새 창(앱)으로 열기
+                    if (frameNaver) frameNaver.style.display = 'none';
+                    this._showRoadviewLauncher(kakaoUrl, naverUrl, '휴대폰에서는 네이버 거리뷰를 네이버지도에서 엽니다.');
+                } else {
+                    if (mobileLauncher) mobileLauncher.style.display = 'none';
+                    if (frameNaver) frameNaver.style.display = 'block';
+                    if (frameNaver && frameNaver.src !== naverUrl) frameNaver.src = naverUrl;
+                }
                 if (btnTabKakao) btnTabKakao.classList.remove('active');
                 if (btnTabNaver) btnTabNaver.classList.add('active');
                 if (btnOpenNewTab) {
@@ -6230,7 +6498,7 @@ const blkFld = (this.labelFields && this.labelFields.blocks) || 'name';
         };
 
         if (!this.kakaoRoadview && frameKakao && frameKakao.src !== kakaoUrl) frameKakao.src = kakaoUrl;
-        if (frameNaver && frameNaver.src !== naverUrl) frameNaver.src = naverUrl;
+        if (!this._isTouchDevice() && frameNaver && frameNaver.src !== naverUrl) frameNaver.src = naverUrl;
 
         if (btnTabKakao) btnTabKakao.onclick = () => switchDockTab('kakao');
         if (btnTabNaver) btnTabNaver.onclick = () => switchDockTab('naver');
@@ -6546,49 +6814,35 @@ const blkFld = (this.labelFields && this.labelFields.blocks) || 'name';
      * 지도 클릭 시 역지오코딩(Reverse Geocoding) 주소 확인
      */
     async handleMapClickReverseGeocode(lat, lng) {
-        // 이미 열린 팝업이나 클릭 이벤트가 시설물 클릭과 중복되지 않도록 처리
+        // 선택 지점의 정확한 주소 조회 (VWorld → 김해 주소대장 가장 가까운 건물 → 주요 지명)
         const nearestBlock = this.findNearestBlockName(lat, lng);
-        let roadAddr = '김해시 관내 도로';
-        let parcelAddr = '';
+        const addr = await this.resolveAddressAt(lat, lng);
 
-        // 로컬 지오코딩 색인에서 400m 이내 가장 가까운 지명/도로명 검색
-        let minDist = 999999;
-        let nearestItem = null;
-
-        GIMHAE_GIS_INDEX.forEach(item => {
-            const d = this.calculateDistance(lat, lng, item.lat, item.lng);
-            if (d < minDist) {
-                minDist = d;
-                nearestItem = item;
-            }
-        });
-
-        let landmark = '';
-        if (nearestItem && minDist < 450) {
-            roadAddr = nearestItem.road || nearestItem.title;
-            parcelAddr = nearestItem.parcel || '';
-            landmark = nearestItem.bldnm || (nearestItem.title !== roadAddr ? nearestItem.title : '');
-        } else {
-            roadAddr = `김해시 ${nearestBlock} 구역`;
-        }
-
-        const cleanRoadAddr = roadAddr
+        const clean = (s) => (s || '')
             .replace(/\[클릭\s*확인\]\s*/g, '')
             .replace(/\s*인근\s*\([^)]*\)/g, '')
             .replace(/\s*\([^)]*m\)/g, '')
             .trim();
+        const road = clean(addr.road);
+        const parcel = clean(addr.parcel);
+        const title = road || parcel || `김해시 ${nearestBlock} 구역`;
 
         const clickItem = {
-            title: cleanRoadAddr,
-            road: cleanRoadAddr,
-            parcel: parcelAddr,
-            bldnm: landmark,
-            place: landmark,
-            category: nearestItem?.category || '',
+            title: title,
+            road: road,
+            parcel: parcel,
+            bldnm: addr.building || '',
+            place: addr.building || '',
+            category: '주소',
             lat: lat,
             lng: lng,
             block: nearestBlock,
-            source: '주소 확인'
+            source: '주소 확인',
+            addrSource: addr.source,
+            addrDistance: addr.distance,
+            addrAccuracy: addr.accuracy,
+            addrNearRoad: addr.nearRoad || '',
+            addrNearDist: addr.nearDist
         };
 
         this.verifyAndGoToLocation(clickItem);
@@ -6782,7 +7036,21 @@ const blkFld = (this.labelFields && this.labelFields.blocks) || 'name';
         return this.vworldApiKey;
     }
 
+    /**
+     * 주소 등 텍스트 복사 (현장 공유용)
+     */
+    copyTextToClipboard(text, label = '주소') {
+        if (!text) return;
+        const done = () => alert(`${label}가 복사되었습니다:\n${text}`);
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(done).catch(() => alert(`${label}: ${text}`));
+        } else {
+            alert(`${label}: ${text}`);
+        }
+    }
+
     setVWorldApiKey(newKey) {
+        this._vworldAddrDisabled = false; // 새 키로 역지오코딩 다시 시도
         const clean = (newKey || '').trim();
         if (clean) {
             this.vworldApiKey = clean;
