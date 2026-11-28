@@ -1372,6 +1372,99 @@ function initGisCanvasLayerClass() {
                 return L.point(p.x - tl.x, p.y - tl.y);
             };
 
+            // ── 관로 라벨 위치 계산용: 실제 화면(뷰포트)에 보이는 영역을 캔버스 좌표 다각형으로 변환 ──
+            // (회전 시에도 정확하도록 화면 네 모서리를 레이어 좌표로 바꿔 사용, 가장자리 6px 안쪽)
+            const viewSize = map.getSize();
+            const vInset = 6;
+            const viewPoly = [[vInset, vInset], [viewSize.x - vInset, vInset], [viewSize.x - vInset, viewSize.y - vInset], [vInset, viewSize.y - vInset]]
+                .map(p => { const lp = map.containerPointToLayerPoint(p); return [lp.x - tl.x, lp.y - tl.y]; });
+            let vpMinX = Infinity, vpMinY = Infinity, vpMaxX = -Infinity, vpMaxY = -Infinity, vpArea = 0;
+            for (let k = 0; k < 4; k++) {
+                const a = viewPoly[k], b = viewPoly[(k + 1) % 4];
+                vpMinX = Math.min(vpMinX, a[0]); vpMaxX = Math.max(vpMaxX, a[0]);
+                vpMinY = Math.min(vpMinY, a[1]); vpMaxY = Math.max(vpMaxY, a[1]);
+                vpArea += a[0] * b[1] - b[0] * a[1];
+            }
+            const vpSign = vpArea >= 0 ? 1 : -1;
+            // 선분(x0,y0)-(x1,y1)을 화면 다각형으로 잘라 보이는 부분 [t0, t1] 반환 (Cyrus-Beck)
+            const clipToView = (x0, y0, x1, y1) => {
+                if (Math.max(x0, x1) < vpMinX || Math.min(x0, x1) > vpMaxX || Math.max(y0, y1) < vpMinY || Math.min(y0, y1) > vpMaxY) return null;
+                const dx = x1 - x0, dy = y1 - y0;
+                let tIn = 0, tOut = 1;
+                for (let k = 0; k < 4; k++) {
+                    const a = viewPoly[k], b = viewPoly[(k + 1) % 4];
+                    const nx = -(b[1] - a[1]) * vpSign, ny = (b[0] - a[0]) * vpSign; // 안쪽 방향 법선
+                    const num = nx * (x0 - a[0]) + ny * (y0 - a[1]);
+                    const den = nx * dx + ny * dy;
+                    if (den === 0) {
+                        if (num < 0) return null;
+                    } else {
+                        const t = -num / den;
+                        if (den > 0) { if (t > tIn) tIn = t; } else { if (t < tOut) tOut = t; }
+                        if (tIn > tOut) return null;
+                    }
+                }
+                return [tIn, tOut];
+            };
+            // 관로 라벨 기준점: 화면에 보이는 구간 중 가장 긴 선분의 '보이는 부분' 가운데
+            // (확대해서 관로 중심이 화면 밖이어도 보이는 관로에는 라벨이 표시되도록)
+            const pipeLabelAnchor = (item, minLen) => {
+                let best = null, bestLen = minLen;
+                const consider = (x0, y0, x1, y1) => {
+                    const c = clipToView(x0, y0, x1, y1);
+                    if (!c) return;
+                    const dx = x1 - x0, dy = y1 - y0;
+                    const segLen = Math.sqrt(dx * dx + dy * dy);
+                    const visLen = segLen * (c[1] - c[0]);
+                    if (visLen < bestLen) return;
+                    const tm = (c[0] + c[1]) * 0.5;
+                    bestLen = visLen;
+                    best = {
+                        x: x0 + dx * tm, y: y0 + dy * tm, angle: Math.atan2(dy, dx), len: visLen,
+                        // 보이는 구간 양끝 (겹칠 때 다른 위치로 옮겨 배치하는 데 사용)
+                        sx: x0 + dx * c[0], sy: y0 + dy * c[0], ex2: x0 + dx * c[1], ey2: y0 + dy * c[1]
+                    };
+                };
+                const nc = item._normCoords;
+                if (nc && nc.length >= 4) {
+                    let px = nc[0] * scale - originX, py = nc[1] * scale - originY;
+                    for (let j = 2; j < nc.length; j += 2) {
+                        const qx = nc[j] * scale - originX, qy = nc[j + 1] * scale - originY;
+                        consider(px, py, qx, qy);
+                        px = qx; py = qy;
+                    }
+                } else {
+                    const coords = item.coordinates || item.c;
+                    if (!coords || coords.length < 2) return null;
+                    let p = toLocal(coords[0]);
+                    for (let j = 1; j < coords.length; j++) {
+                        const q = toLocal(coords[j]);
+                        consider(p.x, p.y, q.x, q.y);
+                        p = q;
+                    }
+                }
+                return best;
+            };
+            // 줌이 클수록 짧게 보이는 구간에도 라벨 허용
+            const labelMinLen = zoom >= 19 ? 24 : (zoom >= 18 ? 40 : 50);
+
+            // 관로 라벨은 레이어별로 바로 그리지 않고 후보로 모은 뒤, 모든 관로·밸브를 그린 다음
+            // 실제 글자 크기 기준 겹침 검사로 한 번에 배치·표시 (레이어 간 겹침도 방지)
+            const labelJobs = [];
+            const queuePipeLabels = (list, n, getText, size, strokeW, getOffset, layerFactor) => {
+                for (let i = 0; i < n; i++) {
+                    const it = list[i];
+                    const a = pipeLabelAnchor(it, labelMinLen);
+                    if (!a) continue;
+                    const dia = it.dia || it.d || 0;
+                    labelJobs.push({
+                        it, a, getText, size, strokeW, offset: getOffset(it),
+                        // 우선순위: 화면에 길게 보이는 관로 > 큰 관경 > 주 레이어(LM)
+                        score: a.len * (1 + Math.min(dia, 600) / 600) * layerFactor
+                    });
+                }
+            };
+
             // 1. 급수관로 (Service Pipes 48,125개) - zoom 16 이상 상세 구간에서만 고속 표출 (줌 15 이하 렉 원천 차단)
             if (mm.layerVisibility.servicePipes && zoom >= 16 && mm.spatialIndexSp) {
                 this._qSp.length = 0;
@@ -1429,78 +1522,18 @@ function initGisCanvasLayerClass() {
                     ctx.lineJoin = spJoin;
                     ctx.stroke(pathSp);
 
-                    // 1-2. 급수관로 관경 라벨 (zoom >= 17, 최대 35개 제한 및 초고속 배치)
+                    // 1-2. 급수관로 관경 라벨 (zoom >= 17) → 후보로 등록 (배치·표시는 렌더링 마지막에 일괄)
                     if (mm.labelVisibility && mm.labelVisibility.servicePipes && zoom >= 17) {
                         const spLabelSize = (mm.labelSizes && mm.labelSizes.servicePipes) || 9;
-                        ctx.save();
-                        ctx.font = `bold ${spLabelSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
-                        ctx.textAlign = 'center';
-                        ctx.textBaseline = 'bottom';
-                        ctx.lineJoin = 'round';
-                        ctx.miterLimit = 2;
-                        ctx.lineWidth = 2.6;
-                        ctx.strokeStyle = '#000000';
-                        ctx.fillStyle = '#FFFFFF';
                         const spOffset = (spLineWidth / 2) + 2.5;
-                        const placedSpLabels = [];
-                        const maxSpLabels = 35;
-                        const minSegSq = 2500; // 최소 50px 이상 선분만
-
-                        for (let i = 0; i < len; i++) {
-                            const sp = spList[i];
-                            const nc = sp._normCoords;
-                            let mx = 0, my = 0, angle = 0;
-                            if (nc && nc.length >= 4) {
-                                const mid = Math.floor(nc.length / 4) * 2;
-                                const pt1x = nc[mid - 2] * scale - originX;
-                                const pt1y = nc[mid - 1] * scale - originY;
-                                const pt2x = nc[mid] * scale - originX;
-                                const pt2y = nc[mid + 1] * scale - originY;
-                                const dx = pt2x - pt1x, dy = pt2y - pt1y;
-                                if ((dx * dx + dy * dy) < minSegSq) continue;
-                                mx = (pt1x + pt2x) * 0.5;
-                                my = (pt1y + pt2y) * 0.5;
-                                angle = Math.atan2(dy, dx);
-                            } else {
-                                const coords = sp.coordinates || sp.c;
-                                if (!coords || coords.length < 2) continue;
-                                const midIdx = Math.floor(coords.length / 2);
-                                const pt1 = toLocal(coords[midIdx - 1]);
-                                const pt2 = toLocal(coords[midIdx]);
-                                const dx = pt2.x - pt1.x, dy = pt2.y - pt1.y;
-                                if ((dx * dx + dy * dy) < minSegSq) continue;
-                                mx = (pt1.x + pt2.x) * 0.5;
-                                my = (pt1.y + pt2.y) * 0.5;
-                                angle = Math.atan2(dy, dx);
-                            }
-
+                        const spFld = (mm.labelFields && mm.labelFields.servicePipes) || 'dia';
+                        const spText = (sp) => {
                             const dia = sp.dia || sp.d || 20;
-                            const spFld = (mm.labelFields && mm.labelFields.servicePipes) || 'dia';
-                            let labelText = 'D' + dia;
-                            if (spFld === 'len') labelText = (sp.len ? sp.len + 'm' : 'D' + dia);
-                            else if (spFld === 'id') labelText = sp.id || ('D' + dia);
-
-                            let isOverlap = false;
-                            for (let k = 0; k < placedSpLabels.length; k++) {
-                                const pl = placedSpLabels[k];
-                                const ddx = mx - pl.x, ddy = my - pl.y;
-                                if (ddx * ddx + ddy * ddy < 2025) { isOverlap = true; break; }
-                            }
-                            if (isOverlap) continue;
-                            placedSpLabels.push({ x: mx, y: my });
-
-                            angle = uprightAngle(angle);
-
-                            ctx.save();
-                            ctx.translate(mx, my);
-                            ctx.rotate(angle);
-                            ctx.strokeText(labelText, 0, -spOffset);
-                            ctx.fillText(labelText, 0, -spOffset);
-                            ctx.restore();
-
-                            if (placedSpLabels.length >= maxSpLabels) break;
-                        }
-                        ctx.restore();
+                            if (spFld === 'len') return sp.len ? sp.len + 'm' : 'D' + dia;
+                            if (spFld === 'id') return sp.id || ('D' + dia);
+                            return 'D' + dia;
+                        };
+                        queuePipeLabels(spList, len, spText, spLabelSize, 2.6, () => spOffset, 0.6);
                     }
                 }
             }
@@ -1562,81 +1595,21 @@ function initGisCanvasLayerClass() {
                     ctx.lineJoin = lm2Join;
                     ctx.stroke(pathLm2);
 
-                    // 2-2. 상수관로 (LM2) 관로 라벨 (zoom >= 16)
+                    // 2-2. 상수관로 (LM2) 관로 라벨 (zoom >= 16) → 후보로 등록 (배치·표시는 렌더링 마지막에 일괄)
                     if (mm.labelVisibility && mm.labelVisibility.pipesLm2 && zoom >= 16) {
                         const lm2LabelSize = (mm.labelSizes && mm.labelSizes.pipesLm2) || 10;
-                        ctx.save();
-                        ctx.font = `bold ${lm2LabelSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
-                        ctx.textAlign = 'center';
-                        ctx.textBaseline = 'bottom';
-                        ctx.lineJoin = 'round';
-                        ctx.miterLimit = 2;
-                        ctx.lineWidth = 2.8;
-                        ctx.strokeStyle = '#000000';
-                        ctx.fillStyle = '#FFFFFF';
                         const lm2Offset = (lm2LineWidth / 2) + 2.8;
-                        const placedLm2Labels = [];
-                        const maxLm2Labels = 40;
-                        const minSegSq = zoom >= 18 ? 1600 : 2500;
                         const lm2Fld = (mm.labelFields && mm.labelFields.pipesLm2) || 'pip_lbl';
-
-                        for (let i = 0; i < len; i++) {
-                            const p = lm2List[i];
-                            const nc = p._normCoords;
-                            let mx = 0, my = 0, angle = 0;
-                            if (nc && nc.length >= 4) {
-                                const mid = Math.floor(nc.length / 4) * 2;
-                                const pt1x = nc[mid - 2] * scale - originX;
-                                const pt1y = nc[mid - 1] * scale - originY;
-                                const pt2x = nc[mid] * scale - originX;
-                                const pt2y = nc[mid + 1] * scale - originY;
-                                const dx = pt2x - pt1x, dy = pt2y - pt1y;
-                                if ((dx * dx + dy * dy) < minSegSq) continue;
-                                mx = (pt1x + pt2x) * 0.5;
-                                my = (pt1y + pt2y) * 0.5;
-                                angle = Math.atan2(dy, dx);
-                            } else {
-                                const coords = p.coordinates || p.c;
-                                if (!coords || coords.length < 2) continue;
-                                const midIdx = Math.floor(coords.length / 2);
-                                const pt1 = toLocal(coords[midIdx - 1]);
-                                const pt2 = toLocal(coords[midIdx]);
-                                const dx = pt2.x - pt1.x, dy = pt2.y - pt1.y;
-                                if ((dx * dx + dy * dy) < minSegSq) continue;
-                                mx = (pt1.x + pt2.x) * 0.5;
-                                my = (pt1.y + pt2.y) * 0.5;
-                                angle = Math.atan2(dy, dx);
-                            }
-
+                        const lm2Text = (p) => {
                             const dia = p.dia || p.d || 80;
-                            let labelText = '';
-                            if (lm2Fld === 'pip_lbl') labelText = gisPipeLabelText(p.pip_lbl) || ('D' + dia);
-                            else if (lm2Fld === 'dia') labelText = 'D' + dia;
-                            else if (lm2Fld === 'mat') labelText = p.mat || 'DCIP';
-                            else if (lm2Fld === 'len') labelText = (p.len ? p.len + 'm' : '-');
-                            else if (lm2Fld === 'id') labelText = p.id || '-';
-
-                            let isOverlap = false;
-                            for (let k = 0; k < placedLm2Labels.length; k++) {
-                                const pl = placedLm2Labels[k];
-                                const ddx = mx - pl.x, ddy = my - pl.y;
-                                if (ddx * ddx + ddy * ddy < 2500) { isOverlap = true; break; }
-                            }
-                            if (isOverlap) continue;
-                            placedLm2Labels.push({ x: mx, y: my });
-
-                            angle = uprightAngle(angle);
-
-                            ctx.save();
-                            ctx.translate(mx, my);
-                            ctx.rotate(angle);
-                            ctx.strokeText(labelText, 0, -lm2Offset);
-                            ctx.fillText(labelText, 0, -lm2Offset);
-                            ctx.restore();
-
-                            if (placedLm2Labels.length >= maxLm2Labels) break;
-                        }
-                        ctx.restore();
+                            if (lm2Fld === 'pip_lbl') return gisPipeLabelText(p.pip_lbl) || ('D' + dia);
+                            if (lm2Fld === 'dia') return 'D' + dia;
+                            if (lm2Fld === 'mat') return p.mat || 'DCIP';
+                            if (lm2Fld === 'len') return p.len ? p.len + 'm' : '-';
+                            if (lm2Fld === 'id') return p.id || '-';
+                            return '';
+                        };
+                        queuePipeLabels(lm2List, len, lm2Text, lm2LabelSize, 2.8, () => lm2Offset, 0.9);
                     }
                 }
             }
@@ -1772,83 +1745,25 @@ function initGisCanvasLayerClass() {
                         ctx.stroke(path250);
                     }
 
-                    // 3-4. 상수관로 (LM) 관경 라벨 표출 (zoom >= 16)
+                    // 3-4. 상수관로 (LM) 관경 라벨 (zoom >= 16) → 후보로 등록 (배치·표시는 렌더링 마지막에 일괄)
                     if (mm.labelVisibility && mm.labelVisibility.pipesLm && zoom >= 16) {
                         const pipeLabelSize = (mm.labelSizes && mm.labelSizes.pipesLm) || 10;
-                        ctx.save();
-                        ctx.font = `bold ${pipeLabelSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
-                        ctx.textAlign = 'center';
-                        ctx.textBaseline = 'bottom';
-                        ctx.lineJoin = 'round';
-                        ctx.miterLimit = 2;
-                        ctx.lineWidth = 2.8;
-                        ctx.strokeStyle = '#000000';
-                        ctx.fillStyle = '#FFFFFF';
-                        const placedLmLabels = [];
-                        const maxLmLabels = 45;
-                        const minSegSq = zoom >= 18 ? 1600 : 2500;
                         const lmFld = (mm.labelFields && mm.labelFields.pipesLm) || 'pip_lbl';
-
-                        for (let i = 0; i < len; i++) {
-                            const p = lmList[i];
-                            const nc = p._normCoords;
-                            let mx = 0, my = 0, angle = 0;
-                            if (nc && nc.length >= 4) {
-                                const mid = Math.floor(nc.length / 4) * 2;
-                                const pt1x = nc[mid - 2] * scale - originX;
-                                const pt1y = nc[mid - 1] * scale - originY;
-                                const pt2x = nc[mid] * scale - originX;
-                                const pt2y = nc[mid + 1] * scale - originY;
-                                const dx = pt2x - pt1x, dy = pt2y - pt1y;
-                                if ((dx * dx + dy * dy) < minSegSq) continue;
-                                mx = (pt1x + pt2x) * 0.5;
-                                my = (pt1y + pt2y) * 0.5;
-                                angle = Math.atan2(dy, dx);
-                            } else {
-                                const coords = p.coordinates || p.c;
-                                if (!coords || coords.length < 2) continue;
-                                const midIdx = Math.floor(coords.length / 2);
-                                const pt1 = toLocal(coords[midIdx - 1]);
-                                const pt2 = toLocal(coords[midIdx]);
-                                const dx = pt2.x - pt1.x, dy = pt2.y - pt1.y;
-                                if ((dx * dx + dy * dy) < minSegSq) continue;
-                                mx = (pt1.x + pt2.x) * 0.5;
-                                my = (pt1.y + pt2.y) * 0.5;
-                                angle = Math.atan2(dy, dx);
-                            }
-
+                        const lmText = (p) => {
                             const dia = p.dia || p.d || 100;
-                            let labelText = '';
-                            if (lmFld === 'pip_lbl') labelText = gisPipeLabelText(p.pip_lbl) || ('D' + dia);
-                            else if (lmFld === 'dia') labelText = 'D' + dia;
-                            else if (lmFld === 'mat') labelText = p.mat || 'DCIP';
-                            else if (lmFld === 'len') labelText = (p.len ? p.len + 'm' : '-');
-                            else if (lmFld === 'id') labelText = p.id || '-';
-
-                            let isOverlap = false;
-                            for (let k = 0; k < placedLmLabels.length; k++) {
-                                const pl = placedLmLabels[k];
-                                const ddx = mx - pl.x, ddy = my - pl.y;
-                                if (ddx * ddx + ddy * ddy < 2500) { isOverlap = true; break; }
-                            }
-                            if (isOverlap) continue;
-                            placedLmLabels.push({ x: mx, y: my });
-
-                            angle = uprightAngle(angle);
-
-                            const curPipeW = (dia > 500) ? wOverActual : ((dia > 250) ? w500Actual : w250Actual);
-                            const labelOffset = (curPipeW / 2) + 2.8;
-
-                            ctx.save();
-                            ctx.translate(mx, my);
-                            ctx.rotate(angle);
-                            ctx.strokeText(labelText, 0, -labelOffset);
-                            ctx.fillText(labelText, 0, -labelOffset);
-                            ctx.restore();
-
-                            if (placedLmLabels.length >= maxLmLabels) break;
-                        }
-                        ctx.restore();
+                            if (lmFld === 'pip_lbl') return gisPipeLabelText(p.pip_lbl) || ('D' + dia);
+                            if (lmFld === 'dia') return 'D' + dia;
+                            if (lmFld === 'mat') return p.mat || 'DCIP';
+                            if (lmFld === 'len') return p.len ? p.len + 'm' : '-';
+                            if (lmFld === 'id') return p.id || '-';
+                            return '';
+                        };
+                        const lmOffset = (p) => {
+                            const dia = p.dia || p.d || 100;
+                            const w = (dia > 500) ? wOverActual : ((dia > 250) ? w500Actual : w250Actual);
+                            return (w / 2) + 2.8;
+                        };
+                        queuePipeLabels(lmList, len, lmText, pipeLabelSize, 2.8, lmOffset, 1.0);
                     }
                 }
             }
@@ -1983,6 +1898,130 @@ function initGisCanvasLayerClass() {
                 }
             }
 
+            // 6. 관로 라벨 일괄 배치·표시 (모든 관로·밸브 위에 그림)
+            if (labelJobs.length) {
+                this._drawPipeLabels(ctx, labelJobs, zoom, dpr, uprightAngle);
+            }
+
+            ctx.restore();
+        },
+
+        /**
+         * 관로 라벨 배치 (겹침 방지 + 축척별 밀도 조절)
+         * - 실제 글자 폭(캐시)으로 회전된 라벨 사각형을 만들고, 격자 색인 + 분리축(SAT) 검사로 겹치면 생략
+         * - 넓게 볼 때(줌 ≤17): 관로가 라벨 길이의 80% 이상 보일 때만, 라벨 간 여백 넓게 → 정돈된 화면
+         * - 확대할수록(줌 ≥19): 짧게 보이는 관로에도 라벨, 여백 최소 → 보이는 관로마다 라벨
+         */
+        _drawPipeLabels: function (ctx, jobs, zoom, dpr, uprightAngle) {
+            const FONT_FAMILY = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+            const fitRatio = zoom >= 19 ? 0 : (zoom >= 18 ? 0.5 : 0.8);
+            const gap = zoom >= 19 ? 4 : (zoom >= 18 ? 8 : (zoom >= 17 ? 14 : 20));
+            const MAX_LABELS = 150; // 안전 상한 (속도 보장)
+            const CELL = 64;
+            const grid = new Map();
+            const boxes = [];
+            const wc = this._labelWidthCache || (this._labelWidthCache = new Map());
+
+            jobs.sort((p, q) => q.score - p.score);
+
+            ctx.save();
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.lineJoin = 'round';
+            ctx.miterLimit = 2;
+            ctx.strokeStyle = '#000000';
+            ctx.fillStyle = '#FFFFFF';
+            let curFont = '';
+            let curStroke = -1;
+            let placed = 0;
+
+            const overlaps = (b) => {
+                const x0 = Math.floor((b.cx - b.ex) / CELL), x1 = Math.floor((b.cx + b.ex) / CELL);
+                const y0 = Math.floor((b.cy - b.ey) / CELL), y1 = Math.floor((b.cy + b.ey) / CELL);
+                for (let gx = x0; gx <= x1; gx++) {
+                    for (let gy = y0; gy <= y1; gy++) {
+                        const cell = grid.get(gx * 100003 + gy);
+                        if (!cell) continue;
+                        for (let k = 0; k < cell.length; k++) {
+                            const o = boxes[cell[k]];
+                            if (Math.abs(o.cx - b.cx) > o.ex + b.ex || Math.abs(o.cy - b.cy) > o.ey + b.ey) continue;
+                            // 분리축 검사 (두 회전 사각형의 4개 축)
+                            const dx = o.cx - b.cx, dy = o.cy - b.cy;
+                            let sep = false;
+                            const axes = [[b.c, b.s], [-b.s, b.c], [o.c, o.s], [-o.s, o.c]];
+                            for (let ai = 0; ai < 4 && !sep; ai++) {
+                                const ax = axes[ai][0], ay = axes[ai][1];
+                                const d = Math.abs(dx * ax + dy * ay);
+                                const rb = b.hw * Math.abs(b.c * ax + b.s * ay) + b.hh * Math.abs(-b.s * ax + b.c * ay);
+                                const ro = o.hw * Math.abs(o.c * ax + o.s * ay) + o.hh * Math.abs(-o.s * ax + o.c * ay);
+                                if (d > rb + ro) sep = true;
+                            }
+                            if (!sep) return true;
+                        }
+                    }
+                }
+                return false;
+            };
+
+            for (let i = 0; i < jobs.length && placed < MAX_LABELS; i++) {
+                const job = jobs[i];
+                const text = job.getText(job.it);
+                if (!text) continue;
+                const font = `bold ${job.size}px ${FONT_FAMILY}`;
+                if (font !== curFont) { ctx.font = font; curFont = font; }
+                const wKey = job.size + '|' + text;
+                let w = wc.get(wKey);
+                if (w === undefined) {
+                    w = ctx.measureText(text).width;
+                    if (wc.size > 5000) wc.clear();
+                    wc.set(wKey, w);
+                }
+                // 넓은 축척에서는 라벨이 관로를 크게 벗어나지 않도록 보이는 길이 조건
+                if (job.a.len < w * fitRatio) continue;
+
+                const ang = uprightAngle(job.a.angle);
+                const c = Math.cos(ang), s = Math.sin(ang);
+                const h = job.size + 2;
+                const oyUp = -(job.offset + h / 2);  // 관로 위쪽
+                const oyDown = job.offset + h / 2;   // 관로 아래쪽 (위가 막혔을 때)
+                const hw = w / 2 + gap / 2, hh = h / 2 + gap / 4;
+                const ex = Math.abs(c) * hw + Math.abs(s) * hh;
+                const ey = Math.abs(s) * hw + Math.abs(c) * hh;
+                // 보이는 구간 가운데 위쪽 → 아래쪽 → (구간이 충분히 길면) 1/4·3/4 지점 위/아래 순으로 시도
+                const a = job.a;
+                const tries = (a.len >= w * 1.6) ? [0.5, 0.25, 0.75] : [0.5];
+                let box = null;
+                for (let ti = 0; ti < tries.length && !box; ti++) {
+                    const t = tries[ti];
+                    const px = a.sx + (a.ex2 - a.sx) * t, py = a.sy + (a.ey2 - a.sy) * t;
+                    for (let side = 0; side < 2; side++) {
+                        const oy = side === 0 ? oyUp : oyDown;
+                        const cand = { cx: px - s * oy, cy: py + c * oy, c, s, hw, hh, ex, ey };
+                        if (!overlaps(cand)) { box = cand; break; }
+                    }
+                }
+                if (!box) continue;
+                const cx = box.cx, cy = box.cy;
+
+                const idx = boxes.length;
+                boxes.push(box);
+                const x0 = Math.floor((cx - box.ex) / CELL), x1 = Math.floor((cx + box.ex) / CELL);
+                const y0 = Math.floor((cy - box.ey) / CELL), y1 = Math.floor((cy + box.ey) / CELL);
+                for (let gx = x0; gx <= x1; gx++) {
+                    for (let gy = y0; gy <= y1; gy++) {
+                        const key = gx * 100003 + gy;
+                        let cell = grid.get(key);
+                        if (!cell) { cell = []; grid.set(key, cell); }
+                        cell.push(idx);
+                    }
+                }
+
+                if (job.strokeW !== curStroke) { ctx.lineWidth = job.strokeW; curStroke = job.strokeW; }
+                ctx.setTransform(dpr * c, dpr * s, -dpr * s, dpr * c, dpr * cx, dpr * cy);
+                ctx.strokeText(text, 0, 0);
+                ctx.fillText(text, 0, 0);
+                placed++;
+            }
             ctx.restore();
         }
     });
