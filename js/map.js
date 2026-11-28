@@ -826,6 +826,18 @@ function gisPreprojectCoords(coords) {
 }
 
 /**
+ * 관로 라벨(pip_lbl) 표시용 텍스트: 년도/관종/관경/연장/심도 5개 항목만 표시
+ * - 원본 라벨 끝에 붙은 용도 항목(예: /배수, /소방, /송수, /농업용수관)은 표시하지 않음
+ * - 원본 데이터는 변경하지 않고 화면 표시만 잘라냄
+ */
+function gisPipeLabelText(lbl) {
+    if (!lbl) return '';
+    const s = String(lbl);
+    const parts = s.split('/');
+    return parts.length > 5 ? parts.slice(0, 5).join('/') : s;
+}
+
+/**
  * QGIS 표준 밸브류 SA코드별 특화 심볼 렌더러 (사용자 제공 도식 100% 일치)
  */
 function drawValveSymbol(ctx, v, x, y, r) {
@@ -1598,7 +1610,7 @@ function initGisCanvasLayerClass() {
 
                             const dia = p.dia || p.d || 80;
                             let labelText = '';
-                            if (lm2Fld === 'pip_lbl') labelText = p.pip_lbl || ('D' + dia);
+                            if (lm2Fld === 'pip_lbl') labelText = gisPipeLabelText(p.pip_lbl) || ('D' + dia);
                             else if (lm2Fld === 'dia') labelText = 'D' + dia;
                             else if (lm2Fld === 'mat') labelText = p.mat || 'DCIP';
                             else if (lm2Fld === 'len') labelText = (p.len ? p.len + 'm' : '-');
@@ -1807,7 +1819,7 @@ function initGisCanvasLayerClass() {
 
                             const dia = p.dia || p.d || 100;
                             let labelText = '';
-                            if (lmFld === 'pip_lbl') labelText = p.pip_lbl || ('D' + dia);
+                            if (lmFld === 'pip_lbl') labelText = gisPipeLabelText(p.pip_lbl) || ('D' + dia);
                             else if (lmFld === 'dia') labelText = 'D' + dia;
                             else if (lmFld === 'mat') labelText = p.mat || 'DCIP';
                             else if (lmFld === 'len') labelText = (p.len ? p.len + 'm' : '-');
