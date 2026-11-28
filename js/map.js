@@ -1059,13 +1059,18 @@ function initGisCanvasLayerClass() {
                 this._update(true, true);
             };
 
-            // 7. (모바일 회전) 회전 중에는 캔버스가 회전 패널과 함께 돌기만 하고(원형 버퍼로 가장자리 확보),
-            //    회전이 멈추면 라벨·심볼을 화면 기준으로 다시 세우기 위해 1회 재렌더링
+            // 7. (모바일 회전) 회전이 시작되면 1회만 원형(넓은) 프레임으로 다시 그리고, 회전 중에는 캔버스가
+            //    회전 패널과 함께 돌기만 함. 회전이 멈추면 원래 크기 프레임 + 화면 기준 라벨·심볼로 1회 재렌더링
             this._onRotate = () => {
+                if (!this._rotatingNow) {
+                    this._rotatingNow = true;
+                    if (!this._map._animatingZoom) this._update(true, true);
+                }
                 if (this._rotateTimer) clearTimeout(this._rotateTimer);
                 this._rotateTimer = setTimeout(() => {
                     this._rotateTimer = null;
-                    this._update(false, false);
+                    this._rotatingNow = false;
+                    if (this._map && !this._map._animatingZoom) this._update(false, true);
                 }, 160);
             };
 
@@ -1151,10 +1156,26 @@ function initGisCanvasLayerClass() {
          */
         _computeFrame: function (size, padX, padY) {
             const map = this._map;
-            if (map._rotate) {
+            if (map._rotate && this._rotatingNow) {
+                // 회전 진행 중: 어떤 각도에서도 화면이 덮이는 원형(정사각) 프레임
                 const half = Math.ceil(Math.sqrt(Math.pow(size.x / 2 + padX, 2) + Math.pow(size.y / 2 + padY, 2)));
                 const c = map.containerPointToLayerPoint([size.x / 2, size.y / 2]);
                 return { tl: L.point(Math.round(c.x - half), Math.round(c.y - half)), w: half * 2, h: half * 2 };
+            }
+            if (map._rotate) {
+                // 회전이 멈춘 상태: 현재 각도로 돌아간 (화면+패딩) 사각형을 감싸는 최소 영역만 그림
+                // (북쪽 정방향이면 기존 PC 와 동일한 크기 → 회전 기능 추가 전과 같은 렌더링 부하)
+                const pts = [[-padX, -padY], [size.x + padX, -padY], [size.x + padX, size.y + padY], [-padX, size.y + padY]]
+                    .map(p => map.containerPointToLayerPoint(p));
+                let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+                pts.forEach(p => {
+                    if (p.x < minX) minX = p.x;
+                    if (p.y < minY) minY = p.y;
+                    if (p.x > maxX) maxX = p.x;
+                    if (p.y > maxY) maxY = p.y;
+                });
+                minX = Math.floor(minX); minY = Math.floor(minY);
+                return { tl: L.point(minX, minY), w: Math.ceil(maxX - minX), h: Math.ceil(maxY - minY) };
             }
             return {
                 tl: map.containerPointToLayerPoint([-padX, -padY]),
@@ -1192,8 +1213,8 @@ function initGisCanvasLayerClass() {
             if (!force && this._lastRenderKey === renderKey) return;
 
             // 패닝 중 가장자리 잘림 및 깜빡임 차단 + 필레이트 절감을 위한 사방 16% 버퍼 패딩
-            // (회전 가능 지도는 원형 프레임 자체가 여유를 주므로 6%만 추가)
-            const padRatio = map._rotate ? 0.06 : 0.16;
+            // (회전 진행 중에는 원형 프레임 자체가 여유를 주므로 6%만 추가)
+            const padRatio = (map._rotate && this._rotatingNow) ? 0.06 : 0.16;
             const padX = Math.round(size.x * padRatio);
             const padY = Math.round(size.y * padRatio);
             const frame = this._computeFrame(size, padX, padY);
@@ -1201,11 +1222,16 @@ function initGisCanvasLayerClass() {
             const totalH = frame.h;
             this._padX = padX;
             this._padY = padY;
-            if (map._rotate) {
+            if (map._rotate && this._rotatingNow) {
                 // 어떤 각도에서도 화면이 덮이는 최소 여유 (패닝 시 재렌더링 기준)
                 const slack = Math.max(8, frame.w / 2 - Math.sqrt(Math.pow(size.x / 2, 2) + Math.pow(size.y / 2, 2)));
                 this._slackX = slack;
                 this._slackY = slack;
+            } else if (map._rotate && (map._bearing || 0) !== 0) {
+                // 돌아간 상태의 사각 프레임: 화면 이동 방향이 레이어 좌표와 어긋나므로 작은 쪽 여유 기준
+                const s = Math.min(padX, padY);
+                this._slackX = s;
+                this._slackY = s;
             } else {
                 this._slackX = padX;
                 this._slackY = padY;
@@ -2149,6 +2175,28 @@ class WaterMapManager {
                         return origUpdateTransform.call(this, center, zoom);
                     };
                     renderer._gisPosPatched = true;
+                }
+                // (모바일 회전) leaflet-rotate 는 회전 이벤트마다 이 렌더러를 다시 그리는데,
+                // 핀치 줌과 회전을 동시에 하면 중간(소수점) 축척 기준으로 다시 그려져 블록 색상이 지도와 어긋나 보임(잔상).
+                // → 핀치/줌 애니메이션 중에는 회전 재그리기를 건너뛰고, 한 프레임에 1번만 다시 그림.
+                //   (렌더러 캔버스는 회전 패널 안에 있어 회전은 CSS 로 자동 반영되며, 손을 떼면 moveend 에서 정확히 다시 그림)
+                if (this.map._rotate && !renderer._gisRotatePatched) {
+                    const map = this.map;
+                    map.off('rotate', renderer._update, renderer);
+                    let rafId = null;
+                    renderer._gisOnRotate = () => {
+                        if (rafId) return;
+                        rafId = requestAnimationFrame(() => {
+                            rafId = null;
+                            if (!renderer._map || map._animatingZoom) return;
+                            const tg = map.touchGestures;
+                            if (tg && tg._zooming && tg._moved) return; // 핀치 진행 중
+                            if (renderer._zoom !== undefined && Math.abs(map.getZoom() - renderer._zoom) > 1e-6) return;
+                            renderer._update();
+                        });
+                    };
+                    map.on('rotate', renderer._gisOnRotate);
+                    renderer._gisRotatePatched = true;
                 }
                 this.canvasRenderer = renderer;
             } catch (e) {
