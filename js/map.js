@@ -972,62 +972,123 @@ function initGisCanvasLayerClass() {
             this._ctx = null;
             this._padX = 0;
             this._padY = 0;
+            this._renderedZoom = undefined;
+            this._renderedTopLeftLatLng = null;
+            this._lastRenderKey = null;
+            this._valveSprites = new Map();
+            this._qSp = [];
+            this._qLm2 = [];
+            this._qLm = [];
+            this._qValves = [];
+            this._qBilling = [];
         },
 
         onAdd: function (map) {
             this._map = map;
             if (!this._canvas) {
                 this._initCanvas();
+            } else if (map._zoomAnimated) {
+                L.DomUtil.addClass(this._canvas, 'leaflet-zoom-animated');
             }
             map.getPanes().overlayPane.appendChild(this._canvas);
 
-            // 1. 축척(줌) 확대/축소 시 부드러운 하드웨어 가속 유지 (깜빡임·잔상 방지)
+            // 1. 축척(줌) 시작 시 대기 중인 프레임 취소 (비애니메이션 환경 잔상 즉시 숨김)
             this._onZoomStart = () => {
                 if (this._animFrameId) {
                     cancelAnimationFrame(this._animFrameId);
+                    this._animFrameId = null;
+                }
+                if (this._canvas && !this._map._zoomAnimated) {
+                    this._canvas.style.visibility = 'hidden';
                 }
             };
 
-            // 2. 축척(줌) 변경 완료 즉시 새 축척에 맞게 즉시 동기 렌더링 후 선명하게 복원
+            // 2. CSS 줌 애니메이션 중 배경 지도·블록과 1:1 픽셀 동기화 (확대/축소 잔상 원천 제거)
+            this._onZoomAnim = (e) => {
+                this._syncTransform(e.center, e.zoom);
+            };
+
+            // 3. flyTo 등 프레임별 연속 줌 이동 시 캔버스 동기화 및 선명도 유지
+            this._onZoom = () => {
+                if (!this._map || !this._canvas || this._map._animatingZoom) return;
+                const z = this._map.getZoom();
+                if (this._renderedZoom === undefined || Math.abs(z - this._renderedZoom) >= 0.85) {
+                    this._update(true, false);
+                } else {
+                    this._syncTransform(this._map.getCenter(), z);
+                }
+            };
+
+            // 4. 축척(줌) 변경 완료 즉시 새 축척에 맞게 단일 동기 렌더링
             this._onZoomEnd = () => {
-                if (this._canvas) {
-                    this._canvas.style.transform = '';
-                    this._update(true);
+                if (!this._canvas) return;
+                this._canvas.style.visibility = 'visible';
+                this._update(true, false);
+            };
+
+            // 5. 드래그(패닝) 중 버퍼 한계를 넘길 때만 선제 갱신 (평상시 0ms GPU 패닝)
+            this._onMove = () => {
+                if (!this._map || !this._canvas || this._map._animatingZoom) return;
+                if (!this._renderedTopLeftLatLng || this._renderedZoom === undefined) return;
+                if (this._map.getZoom() !== this._renderedZoom) return;
+                const curPos = this._map.latLngToLayerPoint(this._renderedTopLeftLatLng);
+                const idealPos = this._map.containerPointToLayerPoint([-this._padX, -this._padY]);
+                if (Math.abs(curPos.x - idealPos.x) > this._padX * 0.82 ||
+                    Math.abs(curPos.y - idealPos.y) > this._padY * 0.82) {
+                    this._update(false, false);
                 }
             };
 
-            // 3. 지도 드래그(패닝) 종료 시 뷰포트 중심 재정렬 및 버퍼 갱신
+            // 6. 지도 드래그(패닝) 종료 시 뷰포트 중심 재정렬 및 버퍼 갱신
             this._onMoveEnd = () => {
-                this._update();
+                this._update(false, false);
+            };
+
+            this._onViewReset = () => {
+                this._update(true, true);
             };
 
             this._onResize = () => {
-                this._update(true);
+                this._update(true, true);
             };
 
             map.on('zoomstart', this._onZoomStart);
+            if (map._zoomAnimated) {
+                map.on('zoomanim', this._onZoomAnim);
+            }
+            map.on('zoom', this._onZoom);
             map.on('zoomend', this._onZoomEnd);
+            map.on('move', this._onMove);
             map.on('moveend', this._onMoveEnd);
+            map.on('viewreset', this._onViewReset);
             map.on('resize', this._onResize);
 
-            this._update(true);
+            this._update(true, true);
         },
 
         onRemove: function (map) {
             if (this._animFrameId) {
                 cancelAnimationFrame(this._animFrameId);
+                this._animFrameId = null;
             }
             if (this._canvas && this._canvas.parentNode) {
                 this._canvas.parentNode.removeChild(this._canvas);
             }
             map.off('zoomstart', this._onZoomStart);
+            map.off('zoomanim', this._onZoomAnim);
+            map.off('zoom', this._onZoom);
             map.off('zoomend', this._onZoomEnd);
+            map.off('move', this._onMove);
             map.off('moveend', this._onMoveEnd);
+            map.off('viewreset', this._onViewReset);
             map.off('resize', this._onResize);
         },
 
         _initCanvas: function () {
             const canvas = L.DomUtil.create('canvas', 'leaflet-gis-canvas-layer');
+            if (this._map && this._map._zoomAnimated) {
+                L.DomUtil.addClass(canvas, 'leaflet-zoom-animated');
+            }
             canvas.style.position = 'absolute';
             canvas.style.pointerEvents = 'none';
             canvas.style.zIndex = '350';
@@ -1036,37 +1097,71 @@ function initGisCanvasLayerClass() {
             this._ctx = canvas.getContext('2d');
         },
 
-        _update: function (immediate = false) {
+        _syncTransform: function (center, zoom) {
+            if (!this._canvas || !this._map || !this._renderedTopLeftLatLng || this._renderedZoom === undefined) {
+                return;
+            }
+            const scale = this._map.getZoomScale(zoom, this._renderedZoom);
+            const offset = typeof this._map._latLngToNewLayerPoint === 'function'
+                ? this._map._latLngToNewLayerPoint(this._renderedTopLeftLatLng, zoom, center)
+                : this._map.latLngToLayerPoint(this._renderedTopLeftLatLng);
+            if (L.Browser.any3d) {
+                L.DomUtil.setTransform(this._canvas, offset, scale);
+            } else {
+                L.DomUtil.setPosition(this._canvas, offset);
+            }
+        },
+
+        _getRenderKey: function () {
+            if (!this._map) return '';
+            const size = this._map.getSize();
+            const center = this._map.getCenter();
+            return `${this._map.getZoom()}|${center.lat.toFixed(7)}|${center.lng.toFixed(7)}|${size.x}|${size.y}`;
+        },
+
+        _update: function (immediate = false, force = false) {
             if (!this._map || !this._canvas) return;
+            if (!force && this._lastRenderKey && this._lastRenderKey === this._getRenderKey()) {
+                return;
+            }
             if (this._animFrameId) {
                 cancelAnimationFrame(this._animFrameId);
                 this._animFrameId = null;
             }
             if (immediate) {
-                this._doUpdate();
+                this._doUpdate(force);
             } else {
                 this._animFrameId = requestAnimationFrame(() => {
-                    this._doUpdate();
+                    this._animFrameId = null;
+                    this._doUpdate(force);
                 });
             }
         },
 
-        _doUpdate: function () {
+        _doUpdate: function (force = false) {
             if (!this._map || !this._canvas) return;
             const map = this._map;
             const size = map.getSize();
             if (size.x <= 0 || size.y <= 0) return;
 
-            // 패닝 중 가장자리 잘림 및 깜빡임 차단을 위한 사방 25% 버퍼 패딩
-            const padX = Math.round(size.x * 0.25);
-            const padY = Math.round(size.y * 0.25);
+            const renderKey = this._getRenderKey();
+            if (!force && this._lastRenderKey === renderKey) return;
+
+            // 패닝 중 가장자리 잘림 및 깜빡임 차단 + 필레이트 절감을 위한 사방 16% 버퍼 패딩
+            const padX = Math.round(size.x * 0.16);
+            const padY = Math.round(size.y * 0.16);
             const totalW = size.x + padX * 2;
             const totalH = size.y + padY * 2;
             this._padX = padX;
             this._padY = padY;
 
             const topLeft = map.containerPointToLayerPoint([-padX, -padY]);
-            L.DomUtil.setPosition(this._canvas, topLeft);
+            if (L.Browser.any3d) {
+                L.DomUtil.setTransform(this._canvas, topLeft, 1);
+            } else {
+                L.DomUtil.setPosition(this._canvas, topLeft);
+            }
+            this._canvas.style.visibility = 'visible';
 
             // 고선명 유지 & 렉/버벅임 원천 차단 최적화 배율 (최대 1.25)
             const dpr = Math.min(window.devicePixelRatio || 1, 1.25);
@@ -1080,35 +1175,72 @@ function initGisCanvasLayerClass() {
                 this._canvas.style.height = totalH + 'px';
             }
 
-            this._render(padX, padY, dpr);
+            this._renderedZoom = map.getZoom();
+            this._renderedTopLeftLatLng = map.containerPointToLatLng([-padX, -padY]);
+            this._lastRenderKey = renderKey;
+
+            this._render(padX, padY, dpr, size);
         },
 
         redraw: function () {
             if (this._map) {
-                this._update(true);
+                this._update(true, true);
             }
         },
 
-        _render: function (padX, padY, dpr = 1) {
+        _getValveSprite: function (cde, r, dpr) {
+            const rKey = r.toFixed(1);
+            const key = `${cde}_${rKey}_${dpr}`;
+            let sprite = this._valveSprites.get(key);
+            if (sprite) return sprite;
+
+            if (this._valveSprites.size > 120) {
+                this._valveSprites.clear();
+            }
+
+            const cssSize = Math.ceil(r * 2.4 + 6);
+            const half = cssSize * 0.5;
+            sprite = document.createElement('canvas');
+            sprite.width = Math.ceil(cssSize * dpr);
+            sprite.height = Math.ceil(cssSize * dpr);
+            sprite._cssSize = cssSize;
+            sprite._halfCss = half;
+
+            const sctx = sprite.getContext('2d');
+            if (dpr !== 1) sctx.scale(dpr, dpr);
+            drawValveSymbol(sctx, { cde: cde }, half, half, r);
+            this._valveSprites.set(key, sprite);
+            return sprite;
+        },
+
+        _render: function (padX, padY, dpr = 1, viewSize = null) {
             const ctx = this._ctx;
             const map = this._map;
             const mm = this.mm;
-            if (!ctx || !map || !mm.gisData) return;
+            if (!ctx || !map) return;
 
             ctx.clearRect(0, 0, this._canvas.width, this._canvas.height);
+            if (!mm.gisData) return;
+
             ctx.save();
             if (dpr !== 1) {
                 ctx.scale(dpr, dpr);
             }
             ctx.translate(padX || 0, padY || 0);
 
+            const size = viewSize || map.getSize();
             const zoom = map.getZoom();
-            // 화면 밖 불필요 객체 질의 방지: 버퍼 패딩 0.25와 일치
-            const viewBounds = map.getBounds().pad(0.25);
+            // 화면 밖 불필요 객체 질의 방지: 버퍼 패딩 0.16과 일치 (약간 여유 0.18)
+            const viewBounds = map.getBounds().pad(0.18);
             const minLat = viewBounds.getSouth();
             const maxLat = viewBounds.getNorth();
             const minLng = viewBounds.getWest();
             const maxLng = viewBounds.getEast();
+            const minPxX = -padX - 20;
+            const maxPxX = size.x + padX + 20;
+            const minPxY = -padY - 20;
+            const maxPxY = size.y + padY + 20;
+            const minSegDistSq = zoom <= 15 ? 2.25 : 1.44;
 
             // 초고속 Web Mercator [0, 1] -> 컨테이너 픽셀 좌표 변환 상수 (매 프레임 1회만 계산)
             const scale = 256 * Math.pow(2, zoom);
@@ -1119,11 +1251,14 @@ function initGisCanvasLayerClass() {
 
             // 1. 급수관로 (Service Pipes 48,125개) - zoom 16 이상 상세 구간에서만 고속 표출 (줌 15 이하 렉 원천 차단)
             if (mm.layerVisibility.servicePipes && zoom >= 16 && mm.spatialIndexSp) {
-                const spList = mm.spatialIndexSp.query(minLat, maxLat, minLng, maxLng);
+                this._qSp.length = 0;
+                const spList = mm.spatialIndexSp.query(minLat, maxLat, minLng, maxLng, this._qSp);
                 const len = spList.length;
                 if (len > 0) {
                     const baseW = (mm.symbolSizes && mm.symbolSizes.pipes && mm.symbolSizes.pipes.servicePipes) || 0.8;
                     const spLineWidth = Math.max(0.4, baseW * (zoom >= 18 ? 1.15 : 1.0));
+                    const spCap = spLineWidth >= 2.0 ? 'round' : 'butt';
+                    const spJoin = spLineWidth >= 2.0 ? 'round' : 'bevel';
                     const pathSp = new Path2D();
 
                     for (let i = 0; i < len; i++) {
@@ -1139,7 +1274,7 @@ function initGisCanvasLayerClass() {
                                 const xj = nc[j] * scale - originX;
                                 const yj = nc[j + 1] * scale - originY;
                                 const ddx = xj - lastX, ddy = yj - lastY;
-                                if (j < clen - 2 && (ddx * ddx + ddy * ddy) < 1.44) continue;
+                                if (j < clen - 2 && (ddx * ddx + ddy * ddy) < minSegDistSq) continue;
                                 pathSp.lineTo(xj, yj);
                                 lastX = xj; lastY = yj;
                             }
@@ -1159,16 +1294,16 @@ function initGisCanvasLayerClass() {
                         ctx.beginPath();
                         ctx.strokeStyle = 'rgba(0, 30, 50, 0.65)';
                         ctx.lineWidth = spLineWidth + 0.8;
-                        ctx.lineCap = 'round';
-                        ctx.lineJoin = 'round';
+                        ctx.lineCap = spCap;
+                        ctx.lineJoin = spJoin;
                         ctx.stroke(pathSp);
                     }
 
                     ctx.beginPath();
                     ctx.strokeStyle = (mm.pipeColors && mm.pipeColors.servicePipes) || '#00E5FF';
                     ctx.lineWidth = spLineWidth;
-                    ctx.lineCap = 'round';
-                    ctx.lineJoin = 'round';
+                    ctx.lineCap = spCap;
+                    ctx.lineJoin = spJoin;
                     ctx.stroke(pathSp);
 
                     // 1-2. 급수관로 관경 라벨 (zoom >= 17, 최대 35개 제한 및 초고속 배치)
@@ -1178,6 +1313,11 @@ function initGisCanvasLayerClass() {
                         ctx.font = `bold ${spLabelSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
                         ctx.textAlign = 'center';
                         ctx.textBaseline = 'bottom';
+                        ctx.lineJoin = 'round';
+                        ctx.miterLimit = 2;
+                        ctx.lineWidth = 2.6;
+                        ctx.strokeStyle = '#000000';
+                        ctx.fillStyle = '#FFFFFF';
                         const spOffset = (spLineWidth / 2) + 2.5;
                         const placedSpLabels = [];
                         const maxSpLabels = 35;
@@ -1231,12 +1371,7 @@ function initGisCanvasLayerClass() {
                             ctx.save();
                             ctx.translate(mx, my);
                             ctx.rotate(angle);
-                            ctx.lineJoin = 'round';
-                            ctx.miterLimit = 2;
-                            ctx.lineWidth = 2.6;
-                            ctx.strokeStyle = '#000000';
                             ctx.strokeText(labelText, 0, -spOffset);
-                            ctx.fillStyle = '#FFFFFF';
                             ctx.fillText(labelText, 0, -spOffset);
                             ctx.restore();
 
@@ -1249,11 +1384,14 @@ function initGisCanvasLayerClass() {
 
             // 2. 상수관로 LM2 - zoom 14 이상에서 표출 (광역 부하 차단)
             if (mm.layerVisibility.pipesLm2 && zoom >= 14 && mm.spatialIndexLm2) {
-                const lm2List = mm.spatialIndexLm2.query(minLat, maxLat, minLng, maxLng);
+                this._qLm2.length = 0;
+                const lm2List = mm.spatialIndexLm2.query(minLat, maxLat, minLng, maxLng, this._qLm2);
                 const len = lm2List.length;
                 if (len > 0) {
                     const baseW = (mm.symbolSizes && mm.symbolSizes.pipes && mm.symbolSizes.pipes.pipesLm2) || 1.0;
                     const lm2LineWidth = Math.max(0.4, baseW * (zoom >= 18 ? 1.2 : 1.0));
+                    const lm2Cap = lm2LineWidth >= 2.0 ? 'round' : 'butt';
+                    const lm2Join = lm2LineWidth >= 2.0 ? 'round' : 'bevel';
                     const pathLm2 = new Path2D();
 
                     for (let i = 0; i < len; i++) {
@@ -1269,7 +1407,7 @@ function initGisCanvasLayerClass() {
                                 const xj = nc[j] * scale - originX;
                                 const yj = nc[j + 1] * scale - originY;
                                 const ddx = xj - lastX, ddy = yj - lastY;
-                                if (j < clen - 2 && (ddx * ddx + ddy * ddy) < 1.44) continue;
+                                if (j < clen - 2 && (ddx * ddx + ddy * ddy) < minSegDistSq) continue;
                                 pathLm2.lineTo(xj, yj);
                                 lastX = xj; lastY = yj;
                             }
@@ -1289,16 +1427,16 @@ function initGisCanvasLayerClass() {
                         ctx.beginPath();
                         ctx.strokeStyle = 'rgba(0, 15, 60, 0.65)';
                         ctx.lineWidth = lm2LineWidth + 0.8;
-                        ctx.lineCap = 'round';
-                        ctx.lineJoin = 'round';
+                        ctx.lineCap = lm2Cap;
+                        ctx.lineJoin = lm2Join;
                         ctx.stroke(pathLm2);
                     }
 
                     ctx.beginPath();
                     ctx.strokeStyle = (mm.pipeColors && mm.pipeColors.pipesLm2) || '#0040FF';
                     ctx.lineWidth = lm2LineWidth;
-                    ctx.lineCap = 'round';
-                    ctx.lineJoin = 'round';
+                    ctx.lineCap = lm2Cap;
+                    ctx.lineJoin = lm2Join;
                     ctx.stroke(pathLm2);
 
                     // 2-2. 상수관로 (LM2) 관로 라벨 (zoom >= 16)
@@ -1308,6 +1446,11 @@ function initGisCanvasLayerClass() {
                         ctx.font = `bold ${lm2LabelSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
                         ctx.textAlign = 'center';
                         ctx.textBaseline = 'bottom';
+                        ctx.lineJoin = 'round';
+                        ctx.miterLimit = 2;
+                        ctx.lineWidth = 2.8;
+                        ctx.strokeStyle = '#000000';
+                        ctx.fillStyle = '#FFFFFF';
                         const lm2Offset = (lm2LineWidth / 2) + 2.8;
                         const placedLm2Labels = [];
                         const maxLm2Labels = 40;
@@ -1364,12 +1507,7 @@ function initGisCanvasLayerClass() {
                             ctx.save();
                             ctx.translate(mx, my);
                             ctx.rotate(angle);
-                            ctx.lineJoin = 'round';
-                            ctx.miterLimit = 2;
-                            ctx.lineWidth = 2.8;
-                            ctx.strokeStyle = '#000000';
                             ctx.strokeText(labelText, 0, -lm2Offset);
-                            ctx.fillStyle = '#FFFFFF';
                             ctx.fillText(labelText, 0, -lm2Offset);
                             ctx.restore();
 
@@ -1383,7 +1521,8 @@ function initGisCanvasLayerClass() {
             // 3. 상수관로 LM - [초고속 단일패스 + Web Mercator 사전 투영 + LOD 적응형 렌더러]
             // [규정] 0~250mm 이하: 파란색, 250~500mm: 빨간색, 500mm 초과: 빨간색 점선
             if (mm.layerVisibility.pipesLm && mm.spatialIndexLm) {
-                const lmList = mm.spatialIndexLm.query(minLat, maxLat, minLng, maxLng);
+                this._qLm.length = 0;
+                const lmList = mm.spatialIndexLm.query(minLat, maxLat, minLng, maxLng, this._qLm);
                 const len = lmList.length;
                 if (len > 0) {
                     const subVis = (mm.subLayerVisibility && mm.subLayerVisibility.pipesLm) ? mm.subLayerVisibility.pipesLm : { d250: true, d500: true, dover: true };
@@ -1433,7 +1572,7 @@ function initGisCanvasLayerClass() {
                                 const xj = nc[j] * scale - originX;
                                 const yj = nc[j + 1] * scale - originY;
                                 const ddx = xj - lastX, ddy = yj - lastY;
-                                if (j < clen - 2 && (ddx * ddx + ddy * ddy) < 1.44) continue;
+                                if (j < clen - 2 && (ddx * ddx + ddy * ddy) < minSegDistSq) continue;
                                 targetPath.lineTo(xj, yj);
                                 lastX = xj; lastY = yj;
                             }
@@ -1459,8 +1598,8 @@ function initGisCanvasLayerClass() {
                         ctx.beginPath();
                         ctx.strokeStyle = (mm.pipeColors && mm.pipeColors.dover) || '#DC2626';
                         ctx.lineWidth = wOverActual;
-                        ctx.lineCap = 'round';
-                        ctx.lineJoin = 'round';
+                        ctx.lineCap = wOverActual >= 2.0 ? 'round' : 'butt';
+                        ctx.lineJoin = wOverActual >= 2.0 ? 'round' : 'bevel';
                         const dashSize = Math.max(6, Math.round(wOverActual * 2.0));
                         const gapSize = Math.max(4, Math.round(wOverActual * 1.2));
                         ctx.setLineDash([dashSize, gapSize]);
@@ -1470,39 +1609,43 @@ function initGisCanvasLayerClass() {
 
                     // 3-2. 250mm 초과 ~ 500mm 이하 (빨간색 실선)
                     if (has500) {
+                        const cap500 = w500Actual >= 2.0 ? 'round' : 'butt';
+                        const join500 = w500Actual >= 2.0 ? 'round' : 'bevel';
                         if (w500Actual >= 1.4) {
                             ctx.beginPath();
                             ctx.strokeStyle = 'rgba(60, 0, 0, 0.65)';
                             ctx.lineWidth = w500Actual + 0.8;
-                            ctx.lineCap = 'round';
-                            ctx.lineJoin = 'round';
+                            ctx.lineCap = cap500;
+                            ctx.lineJoin = join500;
                             ctx.stroke(path500);
                         }
 
                         ctx.beginPath();
                         ctx.strokeStyle = (mm.pipeColors && mm.pipeColors.d500) || '#DC2626';
                         ctx.lineWidth = w500Actual;
-                        ctx.lineCap = 'round';
-                        ctx.lineJoin = 'round';
+                        ctx.lineCap = cap500;
+                        ctx.lineJoin = join500;
                         ctx.stroke(path500);
                     }
 
                     // 3-3. 0 ~ 250mm 이하 (QField 비비드 파란색 실선)
                     if (has250) {
+                        const cap250 = w250Actual >= 2.0 ? 'round' : 'butt';
+                        const join250 = w250Actual >= 2.0 ? 'round' : 'bevel';
                         if (w250Actual >= 1.4) {
                             ctx.beginPath();
                             ctx.strokeStyle = 'rgba(0, 15, 60, 0.65)';
                             ctx.lineWidth = w250Actual + 0.8;
-                            ctx.lineCap = 'round';
-                            ctx.lineJoin = 'round';
+                            ctx.lineCap = cap250;
+                            ctx.lineJoin = join250;
                             ctx.stroke(path250);
                         }
 
                         ctx.beginPath();
                         ctx.strokeStyle = (mm.pipeColors && mm.pipeColors.d250) || '#0040FF';
                         ctx.lineWidth = w250Actual;
-                        ctx.lineCap = 'round';
-                        ctx.lineJoin = 'round';
+                        ctx.lineCap = cap250;
+                        ctx.lineJoin = join250;
                         ctx.stroke(path250);
                     }
 
@@ -1513,6 +1656,11 @@ function initGisCanvasLayerClass() {
                         ctx.font = `bold ${pipeLabelSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
                         ctx.textAlign = 'center';
                         ctx.textBaseline = 'bottom';
+                        ctx.lineJoin = 'round';
+                        ctx.miterLimit = 2;
+                        ctx.lineWidth = 2.8;
+                        ctx.strokeStyle = '#000000';
+                        ctx.fillStyle = '#FFFFFF';
                         const placedLmLabels = [];
                         const maxLmLabels = 45;
                         const minSegSq = zoom >= 18 ? 1600 : 2500;
@@ -1571,12 +1719,7 @@ function initGisCanvasLayerClass() {
                             ctx.save();
                             ctx.translate(mx, my);
                             ctx.rotate(angle);
-                            ctx.lineJoin = 'round';
-                            ctx.miterLimit = 2;
-                            ctx.lineWidth = 2.8;
-                            ctx.strokeStyle = '#000000';
                             ctx.strokeText(labelText, 0, -labelOffset);
-                            ctx.fillStyle = '#FFFFFF';
                             ctx.fillText(labelText, 0, -labelOffset);
                             ctx.restore();
 
@@ -1587,17 +1730,18 @@ function initGisCanvasLayerClass() {
                 }
             }
 
-            // 4. 밸브류 (Valves 33,358개소) - SA코드별 소분류 필터링 및 초고속 배치 렌더러 (zoom 15 이상)
+            // 4. 밸브류 (Valves 33,358개소) - SA코드별 소분류 필터링 + 오프스크린 스프라이트 캐시 초고속 렌더링 (zoom 15 이상)
             if (mm.layerVisibility.valves && zoom >= 15 && mm.spatialIndexValves) {
-                const vList = mm.spatialIndexValves.query(minLat, maxLat, minLng, maxLng);
+                this._qValves.length = 0;
+                const vList = mm.spatialIndexValves.query(minLat, maxLat, minLng, maxLng, this._qValves);
                 const len = vList.length;
                 if (len > 0) {
                     const zoomScale = zoom >= 17 ? 1.25 : (zoom >= 16 ? 1.0 : 0.75);
                     const subVis = (mm.subLayerVisibility && mm.subLayerVisibility.valves) ? mm.subLayerVisibility.valves : {};
                     const sizes = (mm.symbolSizes && mm.symbolSizes.valves) ? mm.symbolSizes.valves : {};
 
-                    if (zoom === 15) {
-                        // zoom 15: 단일 Path2D 일괄 배치로 0.2ms 내 초고속 렌더링
+                    if (zoom < 16) {
+                        // zoom 15~15.9: 단일 Path2D 일괄 배치로 0.2ms 내 초고속 렌더링
                         const dotPath = new Path2D();
                         const r = Math.max(2.5, 4.0 * 0.75);
                         for (let i = 0; i < len; i++) {
@@ -1608,6 +1752,7 @@ function initGisCanvasLayerClass() {
 
                             const px = (v._nx !== undefined) ? (v._nx * scale - originX) : (map.latLngToContainerPoint([v.lat, v.lng]).x);
                             const py = (v._ny !== undefined) ? (v._ny * scale - originY) : (map.latLngToContainerPoint([v.lat, v.lng]).y);
+                            if (px < minPxX || px > maxPxX || py < minPxY || py > maxPxY) continue;
                             dotPath.moveTo(px + r, py);
                             dotPath.arc(px, py, r, 0, Math.PI * 2);
                         }
@@ -1617,18 +1762,22 @@ function initGisCanvasLayerClass() {
                         ctx.fill(dotPath);
                         ctx.stroke(dotPath);
                     } else {
-                        // zoom >= 16: 정밀 SA 심볼 렌더링
+                        // zoom >= 16: 오프스크린 GPU 텍스처 블릿 기반 정밀 SA 심볼 렌더링
                         for (let i = 0; i < len; i++) {
                             const v = vList[i];
                             const cde = v.cde || 'OTHER';
                             const subKey = subVis[cde] !== undefined ? cde : 'OTHER';
                             if (subVis[subKey] === false) continue;
 
-                            const baseR = sizes[subKey] !== undefined ? sizes[subKey] : 5.0;
-                            const r = baseR * zoomScale;
                             const px = (v._nx !== undefined) ? (v._nx * scale - originX) : (map.latLngToContainerPoint([v.lat, v.lng]).x);
                             const py = (v._ny !== undefined) ? (v._ny * scale - originY) : (map.latLngToContainerPoint([v.lat, v.lng]).y);
-                            drawValveSymbol(ctx, v, px, py, r);
+                            if (px < minPxX || px > maxPxX || py < minPxY || py > maxPxY) continue;
+
+                            const baseR = sizes[subKey] !== undefined ? sizes[subKey] : 5.0;
+                            const r = baseR * zoomScale;
+                            const sprite = this._getValveSprite(v.cde || 'SA200', r, dpr);
+                            const half = sprite._halfCss;
+                            ctx.drawImage(sprite, px - half, py - half, sprite._cssSize, sprite._cssSize);
                         }
                     }
                 }
@@ -1636,7 +1785,8 @@ function initGisCanvasLayerClass() {
 
             // 5. 부과 수용가 (Billing Consumers 55,699개소) - 소분류별 일괄 배치 렌더링 (zoom 16 이상)
             if (mm.layerVisibility.billing && zoom >= 16 && mm.spatialIndexBilling) {
-                const bList = mm.spatialIndexBilling.query(minLat, maxLat, minLng, maxLng);
+                this._qBilling.length = 0;
+                const bList = mm.spatialIndexBilling.query(minLat, maxLat, minLng, maxLng, this._qBilling);
                 const len = bList.length;
                 if (len > 0) {
                     const zoomScale = zoom >= 17 ? 1.25 : 1.0;
@@ -1661,6 +1811,7 @@ function initGisCanvasLayerClass() {
 
                         const px = (b._nx !== undefined) ? (b._nx * scale - originX) : (map.latLngToContainerPoint([b.lat, b.lng]).x);
                         const py = (b._ny !== undefined) ? (b._ny * scale - originY) : (map.latLngToContainerPoint([b.lat, b.lng]).y);
+                        if (px < minPxX || px > maxPxX || py < minPxY || py > maxPxY) continue;
 
                         if (isClosed) {
                             pathClosed.moveTo(px + rClosed, py);
@@ -1885,6 +2036,33 @@ class WaterMapManager {
     }
 
     /**
+     * Leaflet L.canvas 렌더러 보장 및 연속 휠 줌 시 좌표 밀림/잔상 방지 패치
+     */
+    _ensureCanvasRenderer() {
+        if (!this.map) return null;
+        if (!this.canvasRenderer || !this.map.hasLayer(this.canvasRenderer)) {
+            try {
+                const renderer = L.canvas({ padding: 0.15 }).addTo(this.map);
+                if (typeof renderer._updateTransform === 'function' && !renderer._gisPosPatched) {
+                    const origUpdateTransform = renderer._updateTransform;
+                    renderer._updateTransform = function (center, zoom) {
+                        if (this._bounds && this._bounds.min && this._container) {
+                            // 연속 줌 애니메이션 중에도 최초 렌더링 기준 위치에서 오프셋 계산
+                            this._container._leaflet_pos = this._bounds.min;
+                        }
+                        return origUpdateTransform.call(this, center, zoom);
+                    };
+                    renderer._gisPosPatched = true;
+                }
+                this.canvasRenderer = renderer;
+            } catch (e) {
+                this.canvasRenderer = null;
+            }
+        }
+        return this.canvasRenderer;
+    }
+
+    /**
      * VWorld 지도 초기화
      */
     initMap() {
@@ -1943,6 +2121,8 @@ class WaterMapManager {
         const vworldCadastral = L.tileLayer('https://xdworld.vworld.kr/2d/Cadastral/service/{z}/{x}/{y}.png', {
             maxZoom: 22,
             maxNativeZoom: 19,
+            updateWhenIdle: true,
+            keepBuffer: 1,
             opacity: 0.75,
             zIndex: 9,
             attribution: '© 국토교통부 연속지적도'
@@ -1962,12 +2142,8 @@ class WaterMapManager {
             cadastral: vworldCadastral
         };
 
-        // 초고성능 벡터 캔버스 렌더러 (지도 DOM에 즉시 연결)
-        try {
-            this.canvasRenderer = L.canvas({ padding: 0.25 }).addTo(this.map);
-        } catch (e) {
-            this.canvasRenderer = null;
-        }
+        // 초고성능 벡터 캔버스 렌더러 (연속 줌 시 잔상·밀림 방지 패치 적용)
+        this._ensureCanvasRenderer();
 
         // GIS 8대 레이어 그룹 등록
         this.layers.blocks = L.featureGroup().addTo(this.map);
@@ -2777,14 +2953,7 @@ class WaterMapManager {
         this.labelLayers.meters.clearLayers();
 
         // 캔버스 렌더러 지도 부착 보장
-        if (!this.canvasRenderer || !this.map.hasLayer(this.canvasRenderer)) {
-            try {
-                this.canvasRenderer = L.canvas({ padding: 0.25 }).addTo(this.map);
-            } catch (e) {
-                this.canvasRenderer = null;
-            }
-        }
-        const renderer = this.canvasRenderer;
+        const renderer = this._ensureCanvasRenderer();
         const allBounds = L.latLngBounds([]);
 
         // 1. 블록경계 (103개 Polygon) - 인접 블록 간 상이한 대비 색상 자동 분할 및 20~30% 연한 투명도 렌더링
@@ -2799,6 +2968,7 @@ class WaterMapManager {
                     const colorStyle = b.colorStyle || { fill: '#8B5CF6', border: '#7C3AED' };
                     const poly = L.polygon(b.coordinates, {
                         renderer: renderer,
+                        smoothFactor: 1.5,
                         color: colorStyle.border,
                         weight: blockWeight,
                         opacity: 0.90,
