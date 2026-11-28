@@ -1008,22 +1008,29 @@ function initGisCanvasLayerClass() {
                 this._syncTransform(e.center, e.zoom);
             };
 
-            // 3. flyTo 등 프레임별 연속 줌 이동 시 캔버스 동기화 및 선명도 유지
-            this._onZoom = () => {
+            // 3. 핀치/flyTo 등 연속 줌 중에는 재렌더링 없이 기존 캔버스를 CSS 변환으로만 따라가게 함
+            //    (제스처 도중 전체 재렌더링이 프레임 끊김의 주원인 → 제스처 종료 후 1회만 렌더링)
+            //    애니메이션 줌 종료 시점의 zoom 이벤트는 다음 프레임으로 미뤄 타일 교체 프레임과 겹치지 않게 함
+            this._onZoom = (e) => {
                 if (!this._map || !this._canvas || this._map._animatingZoom) return;
                 const z = this._map.getZoom();
-                if (this._renderedZoom === undefined || Math.abs(z - this._renderedZoom) >= 0.85) {
-                    this._update(true, false);
-                } else {
-                    this._syncTransform(this._map.getCenter(), z);
+                if (e && (e.pinch || e.flyTo)) {
+                    if (this._renderedZoom !== undefined && Math.abs(z - this._renderedZoom) >= 3) {
+                        this._canvas.style.visibility = 'hidden';
+                    } else {
+                        this._syncTransform(this._map.getCenter(), z);
+                    }
+                    return;
                 }
+                this._syncTransform(this._map.getCenter(), z);
+                this._update(false, false);
             };
 
-            // 4. 축척(줌) 변경 완료 즉시 새 축척에 맞게 단일 동기 렌더링
+            // 4. 축척(줌) 변경 완료 후 다음 프레임에 단일 렌더링 (연속 줌 시 중간 렌더링은 zoomstart 에서 취소됨)
             this._onZoomEnd = () => {
                 if (!this._canvas) return;
                 this._canvas.style.visibility = 'visible';
-                this._update(true, false);
+                this._update(false, false);
             };
 
             // 5. 드래그(패닝) 중 버퍼 한계를 넘길 때만 선제 갱신 (평상시 0ms GPU 패닝)
@@ -1744,6 +1751,8 @@ function initGisCanvasLayerClass() {
                         // zoom 15~15.9: 단일 Path2D 일괄 배치로 0.2ms 내 초고속 렌더링
                         const dotPath = new Path2D();
                         const r = Math.max(2.5, 4.0 * 0.75);
+                        // 같은 2px 칸에 겹치는 점은 화면상 구분되지 않으므로 1개만 그림 (GPU 래스터 부하 절감)
+                        const seenDots = new Set();
                         for (let i = 0; i < len; i++) {
                             const v = vList[i];
                             const cde = v.cde || 'OTHER';
@@ -1753,6 +1762,9 @@ function initGisCanvasLayerClass() {
                             const px = (v._nx !== undefined) ? (v._nx * scale - originX) : (map.latLngToContainerPoint([v.lat, v.lng]).x);
                             const py = (v._ny !== undefined) ? (v._ny * scale - originY) : (map.latLngToContainerPoint([v.lat, v.lng]).y);
                             if (px < minPxX || px > maxPxX || py < minPxY || py > maxPxY) continue;
+                            const dotKey = ((px + 4096) >> 1) * 8192 + ((py + 4096) >> 1);
+                            if (seenDots.has(dotKey)) continue;
+                            seenDots.add(dotKey);
                             dotPath.moveTo(px + r, py);
                             dotPath.arc(px, py, r, 0, Math.PI * 2);
                         }
